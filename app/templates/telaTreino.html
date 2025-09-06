@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Treino - P4 WORKOUT</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            background-color: black;
+        }
+
+        h1 {
+            color: white;
+            margin-bottom: 30px;
+            font-weight: bold;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: black;
+        }
+
+        h3 {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: white;
+        }
+
+        span {
+            color: red;
+        }
+
+        section {
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        nav {
+            background-color: white;
+        }
+
+        nav .nav-link {
+            font-size: 1.2rem !important;
+            font-weight: bold;
+        }
+
+        nav a:hover {
+            transform: scale(1.2);
+            color: #ff6600;
+        }
+
+        .treino-card {
+            background-color: white;
+            color: black;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .lista-exercicios {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .exercicio-item {
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            font-size: 1rem;
+        }
+
+        .nome-exercicio {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .botoes-exercicio .btn{
+            font-size: 0.85rem;
+            padding: 4px 8px;
+        }
+
+    </style>
+
+</head>
+<body class="d-flex flex-column min-vh-100">
+
+    <header class="text-center py-3">
+        <h1>P<span>4</span> WORKOUT</h1>
+        <h3 class="mt-2">Gerenciamento de Treinos</h3>
+    </header>
+
+    <main class="flex-grow-1 container text-center my-4">
+       <div class="mb-4 text-center">
+           <button class="btn btn-light" data-bs-toggle="modal" data-bs-target="#modalAddTreino">+ Adicionar Treino</button>
+       </div>
+
+        {% for treino in treinos %}
+        <div class="treino-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <h2>{{ treino.nome }}</h2>
+                <div>
+                    <button type="button" class="btn btn-dark btn-sm" data-bs-toggle="modal" data-bs-target="#modalEditarTreino{{ treino.id }}">Editar</button>
+                    <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#modalExcluirTreino{{ treino.id }}">Excluir</button>
+                </div>
+            </div>
+
+            <ul class="mt-3 lista-exercicios">
+                {% for exercicio in treino.exercicios %}
+                <li class="exercicio-item d-flex justify-content-between align-items-center">
+                    <span class="nome-exercicio">{{ exercicio.nome }} - {{ exercicio.repeticoes }} repetições x {{ exercicio.series }} séries</span>
+                    <div class="botoes-exercicio">
+                        <button type="button" class="btn btn-dark btn-sm" data-bs-toggle="modal" data-bs-target="#modalEditarExercicio{{ treino.id }}
+                        {{ loop.index0 }}">Editar</button>
+                        <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#modalExcluirExercicio{{ treino.id }}
+                        {{ loop.index0 }}">Excluir</button>
+                    </div>
+                </li>
+
+                <div class="modal fade" id="modalEditarExercicio{{ treino.id }}{{ loop.index0 }}" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content text-dark">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Editar Exercício</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+
+                            <form action="/treinos/{{ treino.id }}//exercicios/{{ loop.index0 }}/editar" method="post">
+                                <div class="modal-body">
+                                    <input type="text" name="nome" class="form-control mb-2" value="{{ exercicio.nome }}" required>
+                                    <input type="number" name="repeticoes" class="form-control mb-2" value="{{ exercicio.repeticoes }}" required>
+                                    <input type="number" name="series" class="form-control mb-2" value="{{ exercicio.series }}" required>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="submit" class="btn btn-dark">Salvar</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal fade" id="modalExcluirExercicio{{ treino.id }}{{ loop.index0 }}" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content text-dark">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Excluir Exercício</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                TEM CERTEZA QUE DESEJA EXCLUIR <strong>{{ exercicio.nome }}</strong>?
+                            </div>
+                            <div class="modal-footer">
+                                <form action="/treinos/{{ treino.id }}/exercicios/{{ loop.index0 }}/excluir" method="post">
+                                    <button type="submit" class="btn btn-danger">Excluir</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {% endfor %}
+            </ul>
+
+            <button class="btn btn-dark btn-sm mt-2" data-bs-toggle="modal" data-bs-target="#modalAddExercicio{{ treino.id }}">+ Adicionar Exercício</button>
+        </div>
+
+        <div class="modal fade" id="modalEditarTreino{{ treino.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content text-dark">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Editar Treino {{treino.nome }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+
+                    <form action="/treinos/{{ treino.id }}/editar" method="post">
+                        <div class="modal-body">
+                            <input type="text" name="nome" class="form-control mb-2" value="{{ treino.nome }}" required>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="submit" class="btn btn-dark">Salvar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal fade" id="modalExcluirTreino{{ treino.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content text-dark">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Excluir Treino</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        TEM CERTEZA QUE DESEJA EXCLUIR <strong>{{ treino.nome }}</strong> E TODOS OS SEUS EXERCÍCIOS?
+                    </div>
+                    <div class="modal-footer">
+                        <form action="/treinos/{{ treino.id }}/excluir" method="post">
+                            <button type="submit" class="btn btn-danger">Excluir</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal fade" id="modalAddExercicio{{ treino.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content text-dark">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Adicionar Exercício - {{ treino.nome }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <form action="/treinos/{{ treino.id }}/exercicios/adicionar" method="post">
+                        <div class="modal-body">
+                            <input type="text" name="nome" class="form-control mb-2" placeholder="Nome do exercício" required>
+                            <input type="number" name="repeticoes" class="form-control mb-2" placeholder="Repetições" required>
+                            <input type="number" name="series" class="form-control mb-2" placeholder="Series" required>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="submit" class="btn btn-dark">Salvar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+    <div class="modal fade" id="modalAddTreino" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content text-dark">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Adicionar Treino</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <form action="/treinos/adicionar" method="post">
+                        <div class="modal-body">
+                            <input type="text" name="nome" class="form-control" placeholder="Nome do Treino" required>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="submit" class="btn btn-dark">Salvar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+    </main>
+
+
+    <nav class="navbar navbar-light bg-light fixed-bottom">
+        <div class="container justify-content-around">
+            <a class="nav-link text-black" href="/menu">Menu</a>
+            <a class="nav-link text-black" href="#">Chat</a>
+            <a class="nav-link text-black" href="#">Acompanhamento</a>
+        </div>
+    </nav>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
