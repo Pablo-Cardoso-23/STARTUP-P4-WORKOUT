@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>P4 WORKOUT - CHATBOT</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+
+        body {
+            background-color: black;
+            color: white;
+        }
+        .chat-container {
+            max-width: 700px;
+            margin: 40px auto;
+            background: #1c1c1c;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .chat-box {
+            height: 400px;
+            overflow-y: auto;
+            background: #fff;
+            color: #000;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        .user-msg {
+            text-align: right;
+            color: black;
+            margin-bottom: 10px;
+        }
+        .bot-msg {
+            text-align: left;
+            color: #E00700;
+            margin-bottom: 10px;
+        }
+        nav {
+            background-color: white;
+        }
+        nav .nav-link {
+            font-size: 1.2rem !important;
+            font-weight: bold;
+        }
+        nav a:hover {
+            transform: scale(1.2);
+            color: #ff6600;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="chat-container">
+        <img src="/static/img/p4chat.png" alt="Logo Chatbot" style="width: 120px;height: 120px; margin-left: 270px;">
+        <h2 class="text-center mb-4">OLÁ! COMO POSSO TE AJUDAR HOJE?</h2>
+
+        <div id="chat-box" class="chat-box"></div>
+
+        <form id="chat-form" class="d-flex">
+            <input type="text" id="pergunta" name="pergunta" class="form-control me-2" placeholder="FAÇA SUA PERGUNTA..." required>
+            <button type="submit" class="btn btn-light">ENVIAR</button>
+        </form>
+    </div>
+
+    <nav class="navbar navbar-light bg-light fixed-bottom">
+        <div class="container justify-content-around">
+            <a class="nav-link text-black" href="/menu">Menu</a>
+            <a class="nav-link text-black" href="/chatbot">Chat</a>
+            <a class="nav-link text-black" href="#">Acompanhamento</a>
+        </div>
+    </nav>
+
+    <script>
+
+        document.getElementById("chat-form").addEventListener("submit", async function(e) {
+            e.preventDefault();
+
+            const pergunta = document.getElementById("pergunta").value;
+            const chatBox = document.getElementById("chat-box");
+
+            chatBox.innerHTML += `<div class="user-msg"><strong>Você:</strong> ${pergunta}</div>`;
+
+            const resp = await fetch("/chat",  {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({ message: pergunta })
+            });
+
+            const data = await resp.json();
+
+            chatBox.innerHTML += `<div class="bot-msg"><strong>Bot:</strong> ${data.reply}</div>`;
+            document.getElementById("pergunta").value = "";
+            chatBox.scrollTop = chatBox.scrollHeight;
+        });
+
+        history.pushState(null, null, location.href);
+
+        window.addEventListener("popstate", function() {
+            window.location.href = "/menu";
+        });
+    </script>
+</body>
+</html>
