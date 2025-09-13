@@ -2,7 +2,7 @@ import locale
 import re
 
 import unicodedata
-
+import sqlite3
 from fastapi import FastAPI, Request, Form
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -12,6 +12,7 @@ from starlette.responses import FileResponse, RedirectResponse
 
 app = FastAPI()
 templates = Jinja2Templates(directory="app/templates")
+DB_PATH = "p4workout.db"
 
 INTENTS = [
 
@@ -67,6 +68,41 @@ INTENTS = [
 SENSITIVE_PATTERNS = [
     r"\b(les[aã]o|dor (aguda|forte)|medica[cç][aã]o|rem[eé]dio\b)"
 ]
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS profissionais (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            especialidade TEXT NOT NULL,
+            foto TEXT,
+            avaliacao REAL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def seed_profissionais():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM profissionais")
+
+    if cur.fetchone()[0] == 0:
+        cur.executemany("""
+            INSERT INTO profissionais (nome, especialidade, foto, avaliacao)
+            VALUES(?, ?, ?, ?)
+        """, [
+            ("Carlos Silva", "Musculação e Hipertrofia", "/static/img/profissionalDeMusculacao.png", 4.7),
+            ("Ana Souza", "Treinamento Funcional", "/static/img/profissionalDeFuncional.png", 4.8),
+            ("João Pereira", "Crossfit e Condicionamento", "/static/img/profissionalDeCondicionamento.png", 4.9)
+        ])
+        conn.commit()
+    conn.close()
+
+init_db()
+seed_profissionais()
 
 def normalize_text(text: str) -> str:
     text = ''.join(
@@ -145,6 +181,26 @@ def adicionar_exercicio(treino_id: int, nome: str = Form(...), repeticoes: int =
             t["exercicios"].append({"nome": nome, "repeticoes": repeticoes, "series": series})
 
         return RedirectResponse("/treinos", status_code=303)
+
+@app.get("/solicitar-treino")
+def solicitar_treino(request: Request):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT id, nome, especialidade, foto, avaliacao FROM profissionais")
+    profissionais = [
+        {"id": row[0], "nome": row[1], "especialidade": row[2], "foto": row[3], "avaliacao": row[4]}
+        for row in cur.fetchall()
+    ]
+    conn.close()
+
+    return templates.TemplateResponse(
+        "telaSolicitarTreino.html",
+        {"request": request, "profissionais": profissionais}
+    )
+
+@app.post("/enviar-solicitacao")
+def enviar_solicitacao(profissinal_id: int = Form(...)):
+    return RedirectResponse("/treinos", status_code=303)
 
 @app.get("/chatbot")
 def chatbot_page(request: Request):

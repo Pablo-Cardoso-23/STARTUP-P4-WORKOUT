@@ -115,10 +115,8 @@
                 <li class="exercicio-item d-flex justify-content-between align-items-center">
                     <span class="nome-exercicio">{{ exercicio.nome }} - {{ exercicio.repeticoes }} repetições x {{ exercicio.series }} séries</span>
                     <div class="botoes-exercicio">
-                        <button type="button" class="btn btn-dark btn-sm" data-bs-toggle="modal" data-bs-target="#modalEditarExercicio{{ treino.id }}
-                        {{ loop.index0 }}">Editar</button>
-                        <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#modalExcluirExercicio{{ treino.id }}
-                        {{ loop.index0 }}">Excluir</button>
+                        <button type="button" class="btn btn-dark btn-sm" data-bs-toggle="modal" data-bs-target="#modalEditarExercicio{{ treino.id }}{{ loop.index0 }}">Editar</button>
+                        <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#modalExcluirExercicio{{ treino.id }}{{ loop.index0 }}">Excluir</button>
                     </div>
                 </li>
 
@@ -130,7 +128,7 @@
                                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                             </div>
 
-                            <form action="/treinos/{{ treino.id }}//exercicios/{{ loop.index0 }}/editar" method="post">
+                            <form action="/treinos/{{ treino.id }}/exercicios/{{ loop.index0 }}/editar" method="post">
                                 <div class="modal-body">
                                     <input type="text" name="nome" class="form-control mb-2" value="{{ exercicio.nome }}" required>
                                     <input type="number" name="repeticoes" class="form-control mb-2" value="{{ exercicio.repeticoes }}" required>
