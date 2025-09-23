@@ -50,6 +50,7 @@ INTENTS = [
         )
     },
 
+
     {
         "name": "hidratacao",
         "patterns": [
@@ -63,6 +64,33 @@ INTENTS = [
 
         )
     },
+
+    {
+        "name": "alimentacaopretreino",
+        "patterns": [
+            r"\bo que comer antes do treino\b",
+            r"\balimenta[cç][aã]o\s+pré[- ]?treino\b",
+            r"\bpré[- ]?treino\b",
+        ],
+        "answer": (
+            "Uma boa refeição pré-treino deve fornecer energia e ser de fácil digestão.\n"
+            "Combine carboidratos complexos (bata-doce, aveia, pão integral) com proteína magra (frango, ovos, iogurte).\n"
+            "Evite alimento muito gordurosos ou ricos em fibras imediatamente antes do treino."
+        )
+    },
+
+    {
+        "name": "alimentacaopostreino",
+        "patterns": [
+            r"\bo que comer depois do treino\b",
+            r"\balimenta[cç][aã]o\s+[- ]?treino\b",
+            r"bp[oó]s[- ]?treino\b"
+        ],
+        "answer": (
+            "Após o treino, priorize proteína para a recuperação muscular (frango, peixe, ovos, whey) e carboidratos para repor energia (arroz, batata, frutas).\n"
+            "O ideal é se alimentar até 1 hora após o treino."
+        )
+    }
 ]
 
 SENSITIVE_PATTERNS = [
@@ -74,6 +102,15 @@ def init_db():
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS profissionais (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            especialidade TEXT NOT NULL,
+            foto TEXT,
+            avaliacao REAL
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS profissionais_nutricao (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT NOT NULL,
             especialidade TEXT NOT NULL,
@@ -101,8 +138,26 @@ def seed_profissionais():
         conn.commit()
     conn.close()
 
+def seed_profissionais_nutricao():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM profissionais_nutricao")
+
+    if cur.fetchone()[0] == 0:
+        cur.executemany("""
+            INSERT INTO profissionais_nutricao (nome, especialidade, foto, avaliacao)
+            VALUES(?, ?, ?, ?)
+        """, [
+            ("Dra. Fernanda Lima", "Nutricionista Esportiva", "/static/img/profissionalDeNutricaoEsportiva.png", 4.9),
+            ("Dr. Rafael Torres", "Nutrição Clínica e Performance", "/static/img/profissionalClinicaePerformance.png", 4.8),
+            ("Dra. Camila Souza", "Nutrição Funcional", "/static/img/profissionalDeNutricaoFuncional.png", 4.7)
+        ])
+        conn.commit()
+    conn.close()
+
 init_db()
 seed_profissionais()
+seed_profissionais_nutricao()
 
 def normalize_text(text: str) -> str:
     text = ''.join(
@@ -147,10 +202,10 @@ async def server_static(path: str):
 
 @app.get("/menu")
 def exibir_menu(request: Request):
-    nome_usuario = "Pablo" # APRIMORAR ARA RECONHECER NO LOGIN
     dias_semana = [
         "SEGUNDA-FEIRA", "TERÇA-FEIRA", "QUARTA-FEIRA", "QUINTA-FEIRA", "SEXTA-FEIRA", "SÁBADO", "DOMINGO"
     ]
+    nome_usuario = "Pablo" # APRIMORAR ARA RECONHECER NO LOGIN
     dia_atual = dias_semana[datetime.now().weekday()]
 
     return templates.TemplateResponse(
@@ -230,3 +285,104 @@ def chat(message: str = Form(...)):
         "confidence": 0.2
     }
 
+dias_semana = [
+        "SEGUNDA-FEIRA", "TERÇA-FEIRA", "QUARTA-FEIRA", "QUINTA-FEIRA", "SEXTA-FEIRA", "SÁBADO", "DOMINGO"
+    ]
+rotinas = [
+    {"id": 1, "nome": "Rotina Cutting", "alimentos": {dia: [] for dia in dias_semana}}
+]
+
+@app.get("/rotina")
+def listar_rotinas(request: Request):
+    return templates.TemplateResponse(
+        "telaRotina.html",
+        {"request": request, "rotinas": rotinas}
+    )
+
+@app.post("/rotinas/adicionar")
+def adicionar_rotina(nome: str = Form( ... )):
+    novo_id = max(r["id"] for r in rotinas) + 1 if rotinas else 1
+    rotinas.append({"id": novo_id, "nome": nome, "alimentos": {dia: [] for dia in dias_semana}})
+    return RedirectResponse("/rotina", status_code=303)
+
+@app.post("/rotinas/{rotina_id}/adicionar-alimento/{dia}")
+def adicionar_alimento(rotina_id: int, dia: str, alimento: str = Form(...)):
+    for r in rotinas:
+        if r["id"] == rotina_id:
+            r["alimentos"][dia].append(alimento)
+    return RedirectResponse("/rotina", status_code=303)
+
+registros = []
+
+@app.get("/acompanhamento")
+def listar_registros(request: Request):
+    return templates.TemplateResponse(
+        "telaAcompanhamento.html",
+        {"request": request, "registros": registros}
+    )
+
+@app.post("/acompanhamento/adicionar")
+def adicionar_registro(
+        calorias_consumidas: int = Form(...),
+        calorias_gastas: int = Form(...),
+        peso: float = Form(...),
+        agua: int = Form(...),
+        treinos: int = Form(...)
+):
+    novo_id = max([r["id"] for r in registros], default=0) + 1
+    registros.append({
+        "id": novo_id,
+        "data": datetime.today().strftime("%d/%m/%Y"),
+        "calorias_consumidas": calorias_consumidas,
+        "calorias_gastas": calorias_gastas,
+        "peso": peso,
+        "agua": agua,
+        "treinos": treinos
+    })
+    return RedirectResponse("/acompanhamento", status_code=303)
+
+
+@app.post("acompanhamento/{reg_id}/editar")
+def editar_registro(
+        reg_id: int,
+        calorias_consumidas: int = Form(...),
+        calorias_gastas: int = Form(...),
+        peso: float = Form(...),
+        agua: int = Form(...),
+        treinos: int = Form(...)
+):
+    for r in registros:
+        if r["id"] == reg_id:
+            r.update({
+                "calorias_consumidas": calorias_consumidas,
+                "calorias_gastas": calorias_gastas,
+                "peso": peso,
+                "agua": agua,
+                "treinos": treinos
+            })
+    return RedirectResponse("/acompanhamento", status_code=303)
+
+@app.post("/acompanhamento/{reg_id}/excluir")
+def excluir_registro(reg_id: int):
+    global registros
+    registros = [r for r in registros if r["id"] != reg_id]
+    return RedirectResponse("/acompanhamento", status_code=303)
+
+@app.get("/solicitar-rotina")
+def solicitar_rotina_page(request: Request):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT id, nome, especialidade, foto, avaliacao FROM profissionais_nutricao")
+    profissionais = [
+        {"id": row[0], "nome": row[1], "especialidade": row[2], "foto": row[3], "avaliacao": row[4]}
+        for row in cur.fetchall()
+    ]
+    conn.close()
+    return templates.TemplateResponse(
+        "telaSolicitarRotina.html",
+        {"request": request, "profissionais": profissionais}
+    )
+
+@app.post("/enviar-solicitacao-rotina")
+def enviar_solicitacao_rotina(profissional_id: int = Form( ... )):
+    return RedirectResponse(url="/rotina", status_code=303)
