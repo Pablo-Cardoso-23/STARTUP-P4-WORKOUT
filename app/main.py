@@ -229,13 +229,54 @@ def adicionar_treino(nome: str = Form( ... )):
     treinos.append({"id": novo_id, "nome": nome, "exercicios": []})
     return RedirectResponse("/treinos", status_code=303)
 
+@app.post("/treinos/{treino_id}/editar")
+def editar_treino(treino_id: int, nome: str = Form(...)):
+    for t in treinos:
+        if t["id"] == treino_id:
+            t["nome"] = nome
+            break
+    return RedirectResponse("/treinos", status_code=303)
+
+@app.post("/treinos/{treino_id}/excluir")
+def excluir_treino(treino_id: int):
+    global treinos
+    treinos = [t for t in treinos if t["id"] != treino_id]
+    return RedirectResponse("/treinos", status_code=303)
+
 @app.post("/treinos/{treino_id}/exercicios/adicionar")
 def adicionar_exercicio(treino_id: int, nome: str = Form(...), repeticoes: int = Form(...), series: int = Form(...)):
     for t in treinos:
         if t["id"] == treino_id:
             t["exercicios"].append({"nome": nome, "repeticoes": repeticoes, "series": series})
+            break
 
-        return RedirectResponse("/treinos", status_code=303)
+    return RedirectResponse("/treinos", status_code=303)
+
+@app.post("/treinos/{treino_id}/exercicios/{exercicio_index}/editar")
+def editar_exercicio(
+        treino_id: int,
+        exercicio_index: int,
+        nome: str = Form(...),
+        repeticoes: int = Form(...),
+        series: int = Form(...)
+):
+    for t in treinos:
+        if t["id"] == treino_id:
+            if 0 <= exercicio_index < len(t["exercicios"]):
+                t["exercicios"][exercicio_index] = {
+                    "nome": nome,
+                    "repeticoes": repeticoes,
+                    "series": series
+                }
+    return RedirectResponse("/treinos", status_code=303)
+
+@app.post("/treinos/{treino_id}/exercicios/{exercicio_index}/excluir")
+def excluir_exercicio(treino_id: int, exercicio_index: int):
+    for t in treinos:
+        if t["id"] == treino_id:
+            if 0 <= exercicio_index < len(t["exercicios"]):
+                t["exercicios"].pop(exercicio_index)
+    return RedirectResponse("/treinos", status_code=303)
 
 @app.get("/solicitar-treino")
 def solicitar_treino(request: Request):
@@ -305,11 +346,39 @@ def adicionar_rotina(nome: str = Form( ... )):
     rotinas.append({"id": novo_id, "nome": nome, "alimentos": {dia: [] for dia in dias_semana}})
     return RedirectResponse("/rotina", status_code=303)
 
+@app.post("/rotinas/{rotina_id}/excluir")
+def excluir_rotina(rotina_id: int):
+    global rotinas
+    rotinas = [r for r in rotinas if r["id"] != rotina_id]
+    return RedirectResponse("/rotina", status_code=303)
+
 @app.post("/rotinas/{rotina_id}/adicionar-alimento/{dia}")
 def adicionar_alimento(rotina_id: int, dia: str, alimento: str = Form(...)):
     for r in rotinas:
         if r["id"] == rotina_id:
             r["alimentos"][dia].append(alimento)
+    return RedirectResponse("/rotina", status_code=303)
+
+@app.post("/rotinas/{rotina_id}/adicionar_alimento/{dia}")
+def adicionar_alimento(rotina_id: int, dia: str, alimento: str = Form(...)):
+    for r in rotinas:
+        if r["id"] == rotina_id:
+            r["alimentos"][dia].append(alimento)
+    return RedirectResponse("/rotina", status_code=303)
+
+@app.post("/rotinas/{rotina_id}/editar-alimento/{dia}/{alimento_index}")
+def editar_alimento(rotina_id: int, dia: str, alimento_index: int, alimento: str = Form(...)):
+    for r in rotinas:
+        if r["id"] == rotina_id:
+            r["alimentos"][dia][alimento_index] = alimento
+    return RedirectResponse("/rotina", status_code=303)
+
+@app.post("/rotinas/{rotina_id}/excluir-alimento/{dia}/{alimento_index}")
+def excluir_alimento(rotina_id: int, dia: str, alimento_index: int):
+    for r in rotinas:
+        if r["id"] == rotina_id:
+            if 0 <= alimento_index < len(r["alimentos"][dia]):
+                r["alimentos"][dia].pop(alimento_index)
     return RedirectResponse("/rotina", status_code=303)
 
 registros = []
@@ -386,3 +455,19 @@ def solicitar_rotina_page(request: Request):
 @app.post("/enviar-solicitacao-rotina")
 def enviar_solicitacao_rotina(profissional_id: int = Form( ... )):
     return RedirectResponse(url="/rotina", status_code=303)
+
+@app.get("/login")
+def login_page(request: Request):
+    return templates.TemplateResponse("telaLogin.html", {"request": request})
+
+@app.post("/login")
+def login(matricula: str = Form( ... ), senha: str = Form(...)):
+    return RedirectResponse(url="/menu", status_code=303)
+
+@app.get("/register")
+def register_page(request: Request):
+    return templates.TemplateResponse("telaCadastro.html", {"request": request})
+
+@app.post("/register")
+def register(nome: str = Form(...), email: str = Form( ... ), cpf: str = Form( ... ), senha: str = Form(...), confirmar_senha: str = Form(...)):
+    return RedirectResponse(url="/login", status_code=303)

@@ -130,6 +130,66 @@
                     <span class="text-muted">Nenhum alimento adicionado</span>
                 {% endif %}
                 <button class="btn btn-dark btn-sm mt-2" data-bs-toggle="modal" data-bs-target="#modalAddAlimento{{ rotina.id }}{{ dia }}">+ Adicionar Alimento</button>
+
+                <div class="modal fade" id="modalAddAlimento{{ rotina.id }}{{ dia }}" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content text-dark">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Adicionar Alimento - {{ dia }}</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <form action="/rotinas/{{ rotina.id }}/adicionar-alimento/{{ dia }}" method="post">
+                                <div class="modal-body">
+                                    <input type="text" name="alimento" class="form-control" placeholder="Nome do alimento" required>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="submit" class="btn btn-dark">Salvar</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal fade" id="modalEditarAlimento{{ rotina.id }}{{ loop.index0 }}{{ dia }}" tabindex="-1" aria-hidden="true">
+                  <div class="modal-dialog">
+                    <div class="modal-content text-dark">
+                      <div class="modal-header">
+                        <h5 class="modal-title">Editar Alimento - {{ dia }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <form action="/rotinas/{{ rotina.id }}/editar-alimento/{{ dia }}/{{ loop.index0 }}" method="post">
+                        <div class="modal-body">
+                          <input type="text" name="alimento" class="form-control" value="{{ alimento }}" required>
+                        </div>
+                        <div class="modal-footer">
+                          <button type="submit" class="btn btn-dark">Salvar</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="modal fade" id="modalExcluirAlimento{{ rotina.id }}{{ loop.index0 }}{{ dia }}" tabindex="-1" aria-hidden="true">
+                  <div class="modal-dialog">
+                    <div class="modal-content text-dark">
+                      <div class="modal-header">
+                        <h5 class="modal-title">Excluir Alimento - {{ dia }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <div class="modal-body">
+                        Tem certeza que deseja excluir <strong>{{ alimento }}</strong> de {{ dia }}?
+                      </div>
+                      <div class="modal-footer">
+                        <form action="/rotinas/{{ rotina.id }}/excluir-alimento/{{ dia }}/{{ loop.index0 }}" method="post">
+                          <button type="submit" class="btn btn-danger">Excluir</button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+
+
             </li>
             {% endfor %}
         </ul>
