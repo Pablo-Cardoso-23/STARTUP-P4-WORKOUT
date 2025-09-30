@@ -14,6 +14,26 @@ app = FastAPI()
 templates = Jinja2Templates(directory="app/templates")
 DB_PATH = "p4workout.db"
 
+def criar_tabelas():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS solicitacoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        aluno_id INTEGER NOT NULL,
+        profissional_id INTEGER NOT NULL,
+        mensagem TEXT,
+        status TEXT DEFAULT 'pendente',
+        data TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+
 INTENTS = [
 
     {
@@ -97,6 +117,8 @@ SENSITIVE_PATTERNS = [
     r"\b(les[aã]o|dor (aguda|forte)|medica[cç][aã]o|rem[eé]dio\b)"
 ]
 
+USUARIO_ATUAL = {"id": 1, "nome": "Pablo", "tipo": "profissional"}
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -158,6 +180,8 @@ def seed_profissionais_nutricao():
 init_db()
 seed_profissionais()
 seed_profissionais_nutricao()
+criar_tabelas()
+
 
 def normalize_text(text: str) -> str:
     text = ''.join(
@@ -212,7 +236,8 @@ def exibir_menu(request: Request):
         "menu.html",
         {"request": request,
          "nome_usuario": nome_usuario,
-         "dia_atual": dia_atual
+         "dia_atual": dia_atual,
+         "tipo_usuario": USUARIO_ATUAL["tipo"]
          })
 
 @app.get("/treinos")
@@ -293,6 +318,35 @@ def solicitar_treino(request: Request):
         "telaSolicitarTreino.html",
         {"request": request, "profissionais": profissionais}
     )
+
+@app.post("solicitacoes/adicionar")
+def adicionar_solicitacao(profissional_id: int = Form( ... ), aluno_id: int = Form(...), mensagem: str = Form("")):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("INSERT INTO solicitacoes (profissional_id, aluno_id, mensagem) VALUES (?, ?, ?)",
+                (profissional_id, aluno_id, mensagem))
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/menu", status_code=303)
+
+@app.get("/profissional/solicitacoes")
+def listar_solicitacoes(request: Request):
+    #tipo = request.session.get("tipo")
+
+    #if tipo != "profissional":
+
+     #   return  RedirectResponse("/menu", status_code=303)
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+    SELECT s.id, s.aluno_id, s.mensagem, s.data
+    FROM solicitacoes s
+    WHERE s.status = 'pendente'
+    """)
+    solicitacoes = [{"id": row[0], "aluno_id": row[1], "mensagem": row[2], "data": row[3]} for row in cur.fetchall()]
+    conn.close()
+    return templates.TemplateResponse("telaSolicitacoes.html", {"request": request, "solicitacoes": solicitacoes})
 
 @app.post("/enviar-solicitacao")
 def enviar_solicitacao(profissinal_id: int = Form(...)):
@@ -461,7 +515,7 @@ def login_page(request: Request):
     return templates.TemplateResponse("telaLogin.html", {"request": request})
 
 @app.post("/login")
-def login(matricula: str = Form( ... ), senha: str = Form(...)):
+def login(email: str = Form( ... ), senha: str = Form(...)):
     return RedirectResponse(url="/menu", status_code=303)
 
 @app.get("/register")
@@ -469,5 +523,16 @@ def register_page(request: Request):
     return templates.TemplateResponse("telaCadastro.html", {"request": request})
 
 @app.post("/register")
-def register(nome: str = Form(...), email: str = Form( ... ), cpf: str = Form( ... ), senha: str = Form(...), confirmar_senha: str = Form(...)):
+def register(nome: str = Form(...),
+             email: str = Form( ... ),
+             cpf: str = Form( ... ),
+             senha: str = Form(...),
+             confirmar_senha: str = Form(...),
+             tipo_usuario: str = Form(...),
+             cref: str = Form(None),
+             ):
+
+    if senha != confirmar_senha:
+        return {"erro": "AS SENHAS NÃO CONFEREM"}
+
     return RedirectResponse(url="/login", status_code=303)

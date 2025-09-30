@@ -45,7 +45,34 @@
         <input type="password" name="senha" class="text-center mt-1" placeholder="SENHA" required>
         <br>
         <input type="password" name="confirmar_senha" class="text-center mt-1" placeholder="CONFIRMAR SENHA" required>
+        <br>
+
+        <select name="tipo_usuario" id="tipo_usuario" class="text-center mt-1" required>
+            <option value="" disabled selected>SELECIONE O TIPO</option>
+            <option value="aluno">ALUNO</option>
+            <option value="profissional">PROFISSIONAL</option>
+        </select>
+        <br>
+
+        <div id="area_profissional" style="display: none;">
+            <select name="area_profissional" id="area_profissional_select" class="text-center mt-1" required>
+                <option value="" disabled selected>SELECIONE A ÁREA</option>
+                <option value="educacao_fisica">EDUCAÇÃO FÍSICA</option>
+                <option value="nutricao">NUTRIÇÃO</option>
+            </select>
+        </div>
+
+        <div id="campo_cref" style="display: none;">
+            <input type="text" name="cref" class="text-center mt-1" placeholder="CREF" required>
+        </div>
+
+        <div id="campo_crm" style="display: none;">
+            <input type="text" name="crm" class="text-center mt-1" placeholder="CRM" required>
+        </div>
+
       </div>
+
+      <br>
 
       <div class="d-grid gap-2 col-6 mx-auto text-center">
         <button style="font-size: 20px;" class="btn btn-light" type="submit">CADASTRAR</button>
@@ -53,6 +80,37 @@
       </div>
     </form>
   </div>
+
+    <script>
+        document.getElementById("tipo_usuario").addEventListener("change", function () {
+          const areaProf = document.getElementById("area_profissional");
+          if (this.value === "profissional") {
+            areaProf.style.display = "block";
+          } else {
+            areaProf.style.display = "none";
+            document.getElementById("campo_cref").style.display = "none";
+            document.getElementById("campo_crm").style.display = "none";
+          }
+        });
+
+        document.getElementById("area_profissional_select").addEventListener("change", function () {
+          const cref = document.getElementById("campo_cref");
+          const crm = document.getElementById("campo_crm");
+
+          if (this.value === "educacao_fisica") {
+            cref.style.display = "block";
+            crm.style.display = "none";
+          } else if (this.value === "nutricao") {
+            crm.style.display = "block";
+            cref.style.display = "none";
+          } else {
+            cref.style.display = "none";
+            crm.style.display = "none";
+          }
+        });
+
+  </script>
+
 </body>
 
 </html>

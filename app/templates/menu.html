@@ -86,6 +86,9 @@
             <a class="nav-link text-black" href="#">Menu</a>
             <a class="nav-link text-black" href="/chatbot">Chat</a>
             <a class="nav-link text-black" href="/acompanhamento">Acompanhamento</a>
+            {% if tipo_usuario == "profissional" %}
+                <a class="nav-link text-black" href="/profissional/solicitacoes">Solicitações</a>
+            {% endif %}
         </div>
     </nav>
 
