@@ -34,7 +34,7 @@
       <img src="/static/img/p4workoutlogo.png" alt="LOGO">
     </div>
 
-    <form action="/login" method="post">
+    <form id="formLogin" action="/login" method="post">
       <div class="row-5">
         <input type="text" name="email" class="text-center mt-3" placeholder="E-MAIL" required>
         <br>
@@ -51,6 +51,38 @@
       <a href="/register" class="btn btn-light mt-2" style="font-size: 20px;">CADASTRAR</a>
     </div>
   </div>
+
+    <script>
+      const form = document.getElementById("formLogin");
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const formData = new FormData(form);
+
+        const resp = await fetch("/login", {
+          method: "POST",
+          body: formData
+        });
+
+        if (resp.redirected) {
+        window.location.href = resp.url;
+        }
+
+        const data = await resp.json();
+
+        if (data.access_token) {
+          // Salva o token no localStorage (ou cookie)
+          localStorage.setItem("token", data.access_token);
+
+          // Redireciona para o menu
+          window.location.href = "/menu";
+        } else {
+          alert("Credenciais inválidas");
+        }
+      });
+  </script>
+
 </body>
 
 </html>

@@ -42,9 +42,9 @@
         <br>
         <input type="text" name="cpf" class="text-center mt-1" placeholder="CPF" required>
         <br>
-        <input type="password" name="senha" class="text-center mt-1" placeholder="SENHA" required>
+        <input type="password" name="senha" class="text-center mt-1" placeholder="SENHA" maxlength="72" required>
         <br>
-        <input type="password" name="confirmar_senha" class="text-center mt-1" placeholder="CONFIRMAR SENHA" required>
+        <input type="password" name="confirmar_senha" class="text-center mt-1" placeholder="CONFIRMAR SENHA" maxlength="72" required>
         <br>
 
         <select name="tipo_usuario" id="tipo_usuario" class="text-center mt-1" required>
@@ -55,7 +55,7 @@
         <br>
 
         <div id="area_profissional" style="display: none;">
-            <select name="area_profissional" id="area_profissional_select" class="text-center mt-1" required>
+            <select name="area_profissional" id="area_profissional_select" class="text-center mt-1">
                 <option value="" disabled selected>SELECIONE A ÁREA</option>
                 <option value="educacao_fisica">EDUCAÇÃO FÍSICA</option>
                 <option value="nutricao">NUTRIÇÃO</option>
@@ -63,11 +63,11 @@
         </div>
 
         <div id="campo_cref" style="display: none;">
-            <input type="text" name="cref" class="text-center mt-1" placeholder="CREF" required>
+            <input type="text" name="cref" class="text-center mt-1" placeholder="CREF">
         </div>
 
         <div id="campo_crm" style="display: none;">
-            <input type="text" name="crm" class="text-center mt-1" placeholder="CRM" required>
+            <input type="text" name="crm" class="text-center mt-1" placeholder="CRM">
         </div>
 
       </div>
@@ -108,6 +108,28 @@
             crm.style.display = "none";
           }
         });
+
+        const form = document.getElementById("formCadastro");
+
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault(); // impede o envio padrão
+
+            const formData = new FormData(form);
+
+            const resp = await fetch("/register", {
+              method: "POST",
+              body: formData
+            });
+
+            const data = await resp.json();
+
+            if (data.success) {
+              window.location.href = data.redirect; // redireciona para /login
+            } else {
+              alert("Erro ao cadastrar!");
+            }
+          });
+
 
   </script>
 

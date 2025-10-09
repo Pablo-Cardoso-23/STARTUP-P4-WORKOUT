@@ -1,18 +1,59 @@
 import locale
 import re
 
+from fastapi.params import Cookie
+
+from app.models.chatbot import INTENTS, SENSITIVE_PATTERNS
 import unicodedata
 import sqlite3
-from fastapi import FastAPI, Request, Form
+from fastapi import FastAPI, Request, Form, HTTPException, Depends, Cookie
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 import os
 from datetime import datetime
-from starlette.responses import FileResponse, RedirectResponse
+from starlette.responses import FileResponse, RedirectResponse, JSONResponse
+from fastapi.security import OAuth2PasswordBearer
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
+from passlib.hash import pbkdf2_sha256
+from jose import jwt, JWTError
+from dotenv import load_dotenv
+from typing import Optional
+
+load_dotenv()
 
 app = FastAPI()
 templates = Jinja2Templates(directory="app/templates")
 DB_PATH = "p4workout.db"
+SECRET_KEY = os.getenv("SECRET_KEY", "senha123")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+SQLITE_DB = os.getenv("SQLITE_DB", "./startup.db")
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+treinos = [
+    {"id": 1, "nome": "Treino A", "exercicios": [
+        {"nome": "Supino Reto", "repeticoes": 10, "series": 4},
+    ]},
+
+    {"id": 2, "nome": "Treino B", "exercicios": [
+        {"nome": "Agachamento Livre", "repeticoes": 10, "series": 4},
+    ]}
+]
+
+def verify_token(access_token: str = Cookie(None)) -> str:
+
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Não autenticado")
+
+    try:
+        payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
+        email = payload.get("sub")
+        if not email:
+            raise HTTPException(status_code=401, detail="Token inválido")
+        return email
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token inválido")
 
 def criar_tabelas():
     conn = sqlite3.connect(DB_PATH)
@@ -32,93 +73,6 @@ def criar_tabelas():
     conn.commit()
     conn.close()
 
-
-
-INTENTS = [
-
-    {
-        "name": "frequencia_treino",
-        "patterns": [
-            r"\bquant[oa]s?\s+dias?\s+(devo|deveria|posso)\s+treinar\b",
-            r"\bfrequ[eê]ncia\s+de\s+treino\b",
-            r"\btreinar\s+por\s+semana\b",
-        ],
-
-        "answer": (
-            "De forma geral, 3 a 5 dias/semana funcionam bem para a maioria.\n"
-            "- Iniciantes: 2–3 dias, focando em movimentos base e técnica.\n"
-            "- Intermediários: 3–5 dias, distribuindo grupos musculares.\n"
-            "- Avançados: 4–6 dias, com volume e recuperação bem planejados.\n"
-            "Inclua 1–2 dias de descanso ativo. Ajuste conforme tempo, sono e recuperação.\n"
-            "Conteúdo educativo — não substitui orientação profissional."
-
-        )
-    },
-
-    {
-        "name": "aquecimento",
-        "patterns": [
-            r"\bcomo\s+aquecer\b",
-            r"\baquecimento\b",
-            r"\bwarm[- ]?up\b"
-        ],
-
-        "answer": (
-            "Aqueça por 5–10 min com cardio leve + mobilidade específica.\n"
-            "Faça 1–2 séries leves do primeiro exercício antes da carga de trabalho."
-
-        )
-    },
-
-
-    {
-        "name": "hidratacao",
-        "patterns": [
-            r"\bhidrata[cç][aã]o\b",
-            r"\bquanto\s+de\s+[àa]gua\b"
-        ],
-
-        "answer": (
-            "Mantenha hidratação ao longo do dia. No treino, beba pequenas quantidades a cada 10–20 min.\n"
-            "Necessidades variam com clima, intensidade e suor."
-
-        )
-    },
-
-    {
-        "name": "alimentacaopretreino",
-        "patterns": [
-            r"\bo que comer antes do treino\b",
-            r"\balimenta[cç][aã]o\s+pré[- ]?treino\b",
-            r"\bpré[- ]?treino\b",
-        ],
-        "answer": (
-            "Uma boa refeição pré-treino deve fornecer energia e ser de fácil digestão.\n"
-            "Combine carboidratos complexos (bata-doce, aveia, pão integral) com proteína magra (frango, ovos, iogurte).\n"
-            "Evite alimento muito gordurosos ou ricos em fibras imediatamente antes do treino."
-        )
-    },
-
-    {
-        "name": "alimentacaopostreino",
-        "patterns": [
-            r"\bo que comer depois do treino\b",
-            r"\balimenta[cç][aã]o\s+[- ]?treino\b",
-            r"bp[oó]s[- ]?treino\b"
-        ],
-        "answer": (
-            "Após o treino, priorize proteína para a recuperação muscular (frango, peixe, ovos, whey) e carboidratos para repor energia (arroz, batata, frutas).\n"
-            "O ideal é se alimentar até 1 hora após o treino."
-        )
-    }
-]
-
-SENSITIVE_PATTERNS = [
-    r"\b(les[aã]o|dor (aguda|forte)|medica[cç][aã]o|rem[eé]dio\b)"
-]
-
-USUARIO_ATUAL = {"id": 1, "nome": "Pablo", "tipo": "profissional"}
-
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -129,7 +83,7 @@ def init_db():
             especialidade TEXT NOT NULL,
             foto TEXT,
             avaliacao REAL
-        )
+        );
     """)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS profissionais_nutricao (
@@ -138,7 +92,22 @@ def init_db():
             especialidade TEXT NOT NULL,
             foto TEXT,
             avaliacao REAL
-        )
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            cpf TEXT UNIQUE,
+            tipo_usuario TEXT,
+            area_profissional TEXT,
+            cref TEXT,
+            crm TEXT,
+            created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+
+        );
     """)
     conn.commit()
     conn.close()
@@ -203,17 +172,6 @@ def is_sensitive(text: str) -> bool:
     t = normalize_text(text)
     return any(re.search(p, t) for p in SENSITIVE_PATTERNS)
 
-# (LUCAS VAI SUBSTITUIR E IMPLEMENTAR COM O BANCO DE DADOS)
-treinos = [
-    {"id": 1, "nome": "Treino A", "exercicios": [
-        {"nome": "Supino Reto", "repeticoes": 10, "series": 4},
-    ]},
-
-    {"id": 2, "nome": "Treino B", "exercicios": [
-        {"nome": "Agachamento Livre", "repeticoes": 10, "series": 4},
-    ]}
-]
-
 @app.get("/static/{path:path}")
 async def server_static(path: str):
     file_path = os.path.join("app/static", path)
@@ -225,19 +183,32 @@ async def server_static(path: str):
     return {"erro": "Arquivo não encontrado"}
 
 @app.get("/menu")
-def exibir_menu(request: Request):
+def exibir_menu(request: Request, user: str = Depends(verify_token)):
     dias_semana = [
         "SEGUNDA-FEIRA", "TERÇA-FEIRA", "QUARTA-FEIRA", "QUINTA-FEIRA", "SEXTA-FEIRA", "SÁBADO", "DOMINGO"
     ]
-    nome_usuario = "Pablo" # APRIMORAR ARA RECONHECER NO LOGIN
     dia_atual = dias_semana[datetime.now().weekday()]
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT nome, tipo_usuario FROM users WHERE email = ?", (user,))
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(
+            status_code=404,
+            detail="USUÁRIO NÃO ENCONTRADO"
+        )
+
+    nome_usuario, tipo_usuario = row
 
     return templates.TemplateResponse(
         "menu.html",
         {"request": request,
          "nome_usuario": nome_usuario,
          "dia_atual": dia_atual,
-         "tipo_usuario": USUARIO_ATUAL["tipo"]
+         "tipo_usuario": tipo_usuario
          })
 
 @app.get("/treinos")
@@ -516,7 +487,21 @@ def login_page(request: Request):
 
 @app.post("/login")
 def login(email: str = Form( ... ), senha: str = Form(...)):
-    return RedirectResponse(url="/menu", status_code=303)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT password FROM users WHERE email = ?", (email,))
+    row = cur.fetchone()
+    conn.close()
+
+    if not row or not pbkdf2_sha256.verify(senha, row[0]):
+        return JSONResponse({"erro": "Credenciais inválidas"}, status_code=401)
+
+    token = jwt.encode({"sub": email}, SECRET_KEY, algorithm=ALGORITHM)
+
+    response = RedirectResponse(url="/menu", status_code=303)
+    response.set_cookie(key="access_token", value=token, httponly=True, secure=False, samesite="Strict")
+
+    return response
 
 @app.get("/register")
 def register_page(request: Request):
@@ -529,10 +514,41 @@ def register(nome: str = Form(...),
              senha: str = Form(...),
              confirmar_senha: str = Form(...),
              tipo_usuario: str = Form(...),
-             cref: str = Form(None),
+             area_profissional: Optional[str] = Form(None),
+             cref: Optional[str] = Form(None),
+             crm: Optional[str] = Form(None),
              ):
 
     if senha != confirmar_senha:
         return {"erro": "AS SENHAS NÃO CONFEREM"}
 
-    return RedirectResponse(url="/login", status_code=303)
+    if tipo_usuario == "profissional":
+        if area_profissional not in ("educacao_fisica", "nutricao"):
+            return {"erro": "Área profissional inválida."}
+        if area_profissional == "educacao_fisica" and not cref:
+            return {"erro": "CREF obrigatório"}
+        if area_profissional == "nutricao" and not crm:
+            return {"erro": "CRM obrigatório"}
+    else:
+        area_profissional = None
+        cref = None
+        crm = None
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE email = ? OR cpf = ?", (email, cpf))
+
+    if cur.fetchone():
+        conn.close()
+        return {"erro": "E-mail ou CPF já cadastrado."}
+
+    hashed_pw = pbkdf2_sha256.hash(senha)
+    cur.execute("""
+        INSERT INTO users (nome, email, password, cpf, tipo_usuario, area_profissional, cref, crm)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (nome, email, hashed_pw, cpf, tipo_usuario, area_profissional, cref, crm))
+
+    conn.commit()
+    conn.close()
+    return {"success": True, "redirect": "/login"}
+    # return RedirectResponse(url="/login", status_code=303)
