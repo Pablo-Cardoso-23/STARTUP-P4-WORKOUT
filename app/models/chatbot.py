@@ -1,3 +1,8 @@
+import sqlite3
+from datetime import date
+import re
+from app.config import DB_PATH
+
 INTENTS = [
 
     {
@@ -98,9 +103,91 @@ INTENTS = [
             "<a href='https://www.blackskullusa.com.br/?gad_source=1&gad_campaignid=16527934236&gbraid=0AAAAADh6h6Q8BLw_3DGzlYTAEjvLlQSly&gclid=CjwKCAjw6P3GBhBVEiwAJPjmLgxO7q-xBimUPDoNn8LtzEcIFbht00nNxtEPLwi9jC4MQgklw1Nq7hoCvJUQAvD_BwE'"
             " target='_blank'>BLACK SKULL - SITE OFICIAL</a><br>"
         )
+    },
+
+    {
+        "name": "listar_treinos",
+        "patterns": [
+            r"\b(quais|meus)\s+treinos\b",
+            r"\blistar\s+treinos\b"
+        ],
+        "answer": None
+    },
+
+    {
+        "name": "listar_exercicios",
+        "patterns": [
+            r"\bexerc[ií]cios\s+do\s+(treino\s+\w+)\b",
+            r"\bmostrar\s+(treino\s+\w+)\b"
+        ],
+        "answer": None
     }
 ]
 
 SENSITIVE_PATTERNS = [
     r"\b(les[aã]o|dor (aguda|forte)|medica[cç][aã]o|rem[eé]dio\b)"
 ]
+
+DB_PATH = "p4workout.db"
+
+def process_message(message: str, user_email: str):
+    for intent in INTENTS:
+        for pattern in intent["patterns"]:
+            match = re.search(pattern, message, re.IGNORECASE)
+            if match:
+                if intent["name"] == "listar_treinos":
+                    return get_treinos(user_email)
+                if intent["name"] == "listar_exercicios":
+                    treino_nome = match.group(1)  # captura o nome do treino
+                    return get_exercicios_do_treino(user_email, treino_nome)
+                return intent["answer"]
+    return "Não entendi sua pergunta. Pode reformular?"
+
+
+def get_treinos(user_email: str):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT id, nome FROM treinos WHERE usuario_email = ?", (user_email,))
+    rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return "Você ainda não cadastrou treinos."
+    return "Seus treinos: " + ", ".join([r[1] for r in rows])
+
+def get_exercicios_do_treino(user_email: str, treino_nome: str):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id FROM treinos
+        WHERE usuario_email = ? AND nome = ?
+    """, (user_email, treino_nome))
+
+    treino = cur.fetchone()
+
+    if not treino:
+        conn.close()
+        return f"Não encontrei nenhum treino chamado '{treino_nome}'."
+
+    treino_id = treino[0]
+
+    cur.execute("""
+        SELECT nome, series, repeticoes
+        FROM exercicios
+        WHERE treino_id = ?
+    """, (treino_id,))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return f"O treino '{treino_nome}' não possui exercícios cadastrados."
+
+    resposta = f"<h4>Exercícios do {treino_nome}: </h4><ul>"
+
+    for nome, series, reps in rows:
+        resposta += f"<li>{nome} - {series} séries - {reps} repetições</li>"
+
+    resposta += "</ul>"
+    return resposta
+

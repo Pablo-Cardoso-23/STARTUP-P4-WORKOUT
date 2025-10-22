@@ -1,9 +1,8 @@
 import locale
 import re
-
 from fastapi.params import Cookie
-
-from app.models.chatbot import INTENTS, SENSITIVE_PATTERNS
+from app.config import DB_PATH
+from app.models.chatbot import INTENTS, SENSITIVE_PATTERNS, get_treinos, get_exercicios_do_treino, process_message
 import unicodedata
 import sqlite3
 from fastapi import FastAPI, Request, Form, HTTPException, Depends, Cookie
@@ -24,27 +23,23 @@ load_dotenv()
 
 app = FastAPI()
 templates = Jinja2Templates(directory="app/templates")
-DB_PATH = "p4workout.db"
+#DB_PATH = "p4workout.db"
 SECRET_KEY = os.getenv("SECRET_KEY", "senha123")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 SQLITE_DB = os.getenv("SQLITE_DB", "./startup.db")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-treinos = [
-    {"id": 1, "nome": "Treino A", "exercicios": [
-        {"nome": "Supino Reto", "repeticoes": 10, "series": 4},
-    ]},
-
-    {"id": 2, "nome": "Treino B", "exercicios": [
-        {"nome": "Agachamento Livre", "repeticoes": 10, "series": 4},
-    ]}
-]
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code == 303 and exc.detail == "Redirect":
+        return RedirectResponse(url="/login", status_code=303)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 def verify_token(access_token: str = Cookie(None)) -> str:
 
     if not access_token:
-        raise HTTPException(status_code=401, detail="Não autenticado")
+        raise HTTPException(status_code=303, detail="Redirect")
 
     try:
         payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -54,6 +49,12 @@ def verify_token(access_token: str = Cookie(None)) -> str:
         return email
     except JWTError:
         raise HTTPException(status_code=401, detail="Token inválido")
+
+@app.post("/logout")
+def logout():
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie("access_token")
+    return response
 
 def criar_tabelas():
     conn = sqlite3.connect(DB_PATH)
@@ -109,8 +110,29 @@ def init_db():
 
         );
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS TREINOS (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            usuario_email TEXT NOT NULL,
+            FOREIGN KEY (usuario_email) REFERENCES users(email)
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS exercicios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            treino_id INTEGER NOT NULL,
+            nome TEXT NOT NULL,
+            repeticoes INTEGER,
+            series INTEGER,
+            FOREIGN KEY (treino_id) REFERENCES treinos(id)
+        );
+    """)
+
     conn.commit()
     conn.close()
+
+
 
 def seed_profissionais():
     conn = sqlite3.connect(DB_PATH)
@@ -212,66 +234,111 @@ def exibir_menu(request: Request, user: str = Depends(verify_token)):
          })
 
 @app.get("/treinos")
-def listar_treinos(request: Request):
+def listar_treinos(request: Request, user: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
 
-    return templates.TemplateResponse(
-        "telaTreino.html",
-        {"request": request, "treinos": treinos}
-    )
+    cur.execute("SELECT id, nome FROM treinos WHERE usuario_email = ?", (user,))
+    treinos_db = cur.fetchall()
+
+    treinos = []
+
+    for treino_id, nome in treinos_db:
+        cur.execute("SELECT id, nome, repeticoes, series FROM exercicios WHERE treino_id = ?", (treino_id,))
+        exercicios = [
+            {"id": e[0], "nome": e[1], "repeticoes": e[2], "series": e[3]}
+            for e in cur.fetchall()
+        ]
+        treinos.append({"id": treino_id, "nome": nome, "exercicios": exercicios})
+
+    conn.close()
+    return templates.TemplateResponse("telaTreino.html", {"request": request, "treinos": treinos})
 
 @app.post("/treinos/adicionar")
-def adicionar_treino(nome: str = Form( ... )):
-    novo_id = max(t["id"] for t in treinos) + 1 if treinos else 1
-    treinos.append({"id": novo_id, "nome": nome, "exercicios": []})
+def adicionar_treino(nome: str = Form( ... ), user: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("INSERT INTO treinos (nome, usuario_email) VALUES (?, ?)", (nome, user))
+    conn.commit()
+    conn.close()
     return RedirectResponse("/treinos", status_code=303)
 
 @app.post("/treinos/{treino_id}/editar")
-def editar_treino(treino_id: int, nome: str = Form(...)):
-    for t in treinos:
-        if t["id"] == treino_id:
-            t["nome"] = nome
-            break
+def editar_treino(treino_id: int, nome: str = Form(...), user: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("UPDATE treinos SET nome = ? WHERE id = ? AND usuario_email = ?", (nome, treino_id, user))
+    conn.commit()
+    conn.close()
     return RedirectResponse("/treinos", status_code=303)
 
 @app.post("/treinos/{treino_id}/excluir")
-def excluir_treino(treino_id: int):
-    global treinos
-    treinos = [t for t in treinos if t["id"] != treino_id]
+def excluir_treino(treino_id: int, user: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM exercicios WHERE treino_id = ?", (treino_id,))
+    cur.execute("DELETE FROM treinos WHERE id = ? AND usuario_email = ?", (treino_id, user))
+    conn.commit()
+    conn.close()
     return RedirectResponse("/treinos", status_code=303)
 
 @app.post("/treinos/{treino_id}/exercicios/adicionar")
-def adicionar_exercicio(treino_id: int, nome: str = Form(...), repeticoes: int = Form(...), series: int = Form(...)):
-    for t in treinos:
-        if t["id"] == treino_id:
-            t["exercicios"].append({"nome": nome, "repeticoes": repeticoes, "series": series})
-            break
+def adicionar_exercicio(treino_id: int, nome: str = Form(...), repeticoes: int = Form(...), series: int = Form(...), user: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
 
+    cur.execute("SELECT id FROM treinos WHERE id = ? AND usuario_email = ?", (treino_id, user))
+    if not cur.fetchone():
+        conn.close()
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    cur.execute("INSERT INTO exercicios (treino_id, nome, repeticoes, series) VALUES (?, ?, ?, ?)",
+                (treino_id, nome, repeticoes, series))
+    conn.commit()
+    conn.close()
     return RedirectResponse("/treinos", status_code=303)
 
-@app.post("/treinos/{treino_id}/exercicios/{exercicio_index}/editar")
+@app.post("/treinos/{treino_id}/exercicios/{exercicio_id}/editar")
 def editar_exercicio(
         treino_id: int,
-        exercicio_index: int,
+        exercicio_id: int,
         nome: str = Form(...),
         repeticoes: int = Form(...),
-        series: int = Form(...)
+        series: int = Form(...),
+        user: str = Depends(verify_token)
 ):
-    for t in treinos:
-        if t["id"] == treino_id:
-            if 0 <= exercicio_index < len(t["exercicios"]):
-                t["exercicios"][exercicio_index] = {
-                    "nome": nome,
-                    "repeticoes": repeticoes,
-                    "series": series
-                }
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM treinos WHERE id = ? AND usuario_email = ?", (treino_id, user))
+
+    if not cur.fetchone():
+        conn.close()
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    cur.execute("""
+        UPDATE exercicios
+        SET nome = ?, repeticoes = ?, series = ?
+        WHERE id = ? AND treino_id = ?
+    """, (nome, repeticoes, series, exercicio_id, treino_id))
+
+    conn.commit()
+    conn.close()
     return RedirectResponse("/treinos", status_code=303)
 
-@app.post("/treinos/{treino_id}/exercicios/{exercicio_index}/excluir")
-def excluir_exercicio(treino_id: int, exercicio_index: int):
-    for t in treinos:
-        if t["id"] == treino_id:
-            if 0 <= exercicio_index < len(t["exercicios"]):
-                t["exercicios"].pop(exercicio_index)
+@app.post("/treinos/{treino_id}/exercicios/{exercicio_id}/excluir")
+def excluir_exercicio(treino_id: int, exercicio_id: int, user: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("SELECT id FROM treinos WHERE id = ? AND usuario_email = ?", (treino_id, user))
+
+    if not cur.fetchone():
+        conn.close()
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    cur.execute("DELETE FROM exercicios WHERE id = ? AND treino_id = ?", (exercicio_id, treino_id,))
+    conn.commit()
+    conn.close()
     return RedirectResponse("/treinos", status_code=303)
 
 @app.get("/solicitar-treino")
@@ -331,7 +398,7 @@ def chatbot_page(request: Request):
     )
 
 @app.post("/chat")
-def chat(message: str = Form(...)):
+def chat(message: str = Form(...), user: str = Depends(verify_token)):
     if is_sensitive(message):
         return {
             "reply": "Isso parece exigir avalização personalizada. Procure um profissional de saúde qualificado.",
@@ -339,7 +406,8 @@ def chat(message: str = Form(...)):
             "confidence": 0.8
         }
 
-    intent, answer, confidence = detect_intent(message)
+    resposta = process_message(message, user)
+    return {"reply": resposta}
 
     if intent:
         return {"reply": answer, "intent": intent, "confidence": confidence}
@@ -550,5 +618,5 @@ def register(nome: str = Form(...),
 
     conn.commit()
     conn.close()
-    return {"success": True, "redirect": "/login"}
-    # return RedirectResponse(url="/login", status_code=303)
+    # return {"success": True, "redirect": "/login"}
+    return RedirectResponse(url="/login", status_code=303)
