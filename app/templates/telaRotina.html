@@ -118,12 +118,50 @@
                     <ul>
                         {% for alimento in alimentos %}
                         <li class="d-flex justify-content-between align-items-center">
-                            {{ alimento }}
+                            {{ alimento.nome }}
                             <div>
-                                <button type="button" class="btn btn-dark btn-sm" data-bs-toggle="modal" data-bs-target="#modalEditarAlimento{{ rotina.id }}{{ loop.index0 }}{{ dia }}">Editar</button>
-                                <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#modalExcluirAlimento{{ rotina.id }}{{ loop.index0 }}{{ dia }}">Excluir</button>
+                                <button type="button" class="btn btn-dark btn-sm" data-bs-toggle="modal" data-bs-target="#modalEditarAlimento{{ rotina.id }}{{ alimento.id }}{{ dia }}">Editar</button>
+                                <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#modalExcluirAlimento{{ rotina.id }}{{ alimento.id }}{{ dia }}">Excluir</button>
                             </div>
                         </li>
+
+                        <div class="modal fade" id="modalEditarAlimento{{ rotina.id }}{{ alimento.id }}{{ dia }}" tabindex="-1" aria-hidden="true">
+                          <div class="modal-dialog">
+                            <div class="modal-content text-dark">
+                              <div class="modal-header">
+                                <h5 class="modal-title">Editar Alimento - {{ dia }}</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                              </div>
+                              <form action="/rotinas/{{ rotina.id }}/editar-alimento/{{ dia }}/{{ alimento.id }}" method="post">
+                                <div class="modal-body">
+                                  <input type="text" name="alimento" class="form-control" value="{{ alimento.nome }}" required>
+                                </div>
+                                <div class="modal-footer">
+                                  <button type="submit" class="btn btn-dark">Salvar</button>
+                                </div>
+                              </form>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="modal fade" id="modalExcluirAlimento{{ rotina.id }}{{ alimento.id }}{{ dia }}" tabindex="-1" aria-hidden="true">
+                          <div class="modal-dialog">
+                            <div class="modal-content text-dark">
+                              <div class="modal-header">
+                                <h5 class="modal-title">Excluir Alimento - {{ dia }}</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                              </div>
+                              <div class="modal-body">
+                                Tem certeza que deseja excluir <strong>{{ alimento.nome }}</strong> de {{ dia }}?
+                              </div>
+                              <div class="modal-footer">
+                                <form action="/rotinas/{{ rotina.id }}/excluir-alimento/{{ dia }}/{{ alimento.id }}" method="post">
+                                  <button type="submit" class="btn btn-danger">Excluir</button>
+                                </form>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                         {% endfor %}
                     </ul>
                 {% else %}
@@ -149,46 +187,6 @@
                         </div>
                     </div>
                 </div>
-
-                <div class="modal fade" id="modalEditarAlimento{{ rotina.id }}{{ loop.index0 }}{{ dia }}" tabindex="-1" aria-hidden="true">
-                  <div class="modal-dialog">
-                    <div class="modal-content text-dark">
-                      <div class="modal-header">
-                        <h5 class="modal-title">Editar Alimento - {{ dia }}</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                      </div>
-                      <form action="/rotinas/{{ rotina.id }}/editar-alimento/{{ dia }}/{{ loop.index0 }}" method="post">
-                        <div class="modal-body">
-                          <input type="text" name="alimento" class="form-control" value="{{ alimento }}" required>
-                        </div>
-                        <div class="modal-footer">
-                          <button type="submit" class="btn btn-dark">Salvar</button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="modal fade" id="modalExcluirAlimento{{ rotina.id }}{{ loop.index0 }}{{ dia }}" tabindex="-1" aria-hidden="true">
-                  <div class="modal-dialog">
-                    <div class="modal-content text-dark">
-                      <div class="modal-header">
-                        <h5 class="modal-title">Excluir Alimento - {{ dia }}</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                      </div>
-                      <div class="modal-body">
-                        Tem certeza que deseja excluir <strong>{{ alimento }}</strong> de {{ dia }}?
-                      </div>
-                      <div class="modal-footer">
-                        <form action="/rotinas/{{ rotina.id }}/excluir-alimento/{{ dia }}/{{ loop.index0 }}" method="post">
-                          <button type="submit" class="btn btn-danger">Excluir</button>
-                        </form>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-
 
             </li>
             {% endfor %}

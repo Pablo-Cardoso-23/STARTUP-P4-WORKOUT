@@ -129,6 +129,39 @@ def init_db():
         );
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS rotinas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            usuario_email TEXT NOT NULL,
+            FOREIGN KEY (usuario_email) REFERENCES users(email)
+        );
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS rotina_alimentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rotina_id INTEGER NOT NULL,
+            dia TEXT NOT NULL,
+            alimento TEXT NOT NULL,
+            FOREIGN KEY (rotina_id) REFERENCES rotinas(id)
+        );
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS acompanhamento (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_email TEXT NOT NULL,
+            data TEXT NOT NULL,
+            calorias_consumidas INTEGER NOT NULL,
+            calorias_gastas INTEGER NOT NULL,
+            peso REAL NOT NULL,
+            agua INTEGER NOT NULL,
+            treinos INTEGER NOT NULL,
+            FOREIGN KEY (usuario_email) REFERENCES users(email)
+        );
+    """)
+
     conn.commit()
     conn.close()
 
@@ -341,23 +374,9 @@ def excluir_exercicio(treino_id: int, exercicio_id: int, user: str = Depends(ver
     conn.close()
     return RedirectResponse("/treinos", status_code=303)
 
-@app.get("/solicitar-treino")
-def solicitar_treino(request: Request):
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT id, nome, especialidade, foto, avaliacao FROM profissionais")
-    profissionais = [
-        {"id": row[0], "nome": row[1], "especialidade": row[2], "foto": row[3], "avaliacao": row[4]}
-        for row in cur.fetchall()
-    ]
-    conn.close()
 
-    return templates.TemplateResponse(
-        "telaSolicitarTreino.html",
-        {"request": request, "profissionais": profissionais}
-    )
 
-@app.post("solicitacoes/adicionar")
+@app.post("/solicitacoes/adicionar")
 def adicionar_solicitacao(profissional_id: int = Form( ... ), aluno_id: int = Form(...), mensagem: str = Form("")):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -367,28 +386,118 @@ def adicionar_solicitacao(profissional_id: int = Form( ... ), aluno_id: int = Fo
     conn.close()
     return RedirectResponse("/menu", status_code=303)
 
+@app.get("/profissionais-ed-fisica")
+def listar_profissionais_ed_fisica(request:Request):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, nome, area_profissional 
+        FROM users
+        WHERE tipo_usuario = 'profissional' AND area_profissional = 'educacao_fisica'
+    """)
+    rows = cur.fetchall()
+    conn.close()
+
+    profissionais = [
+        {
+            "id": r[0],
+            "nome": r[1],
+            "especialidade": "Educação Física",
+            "foto": "/static/img/profissionalDeMusculacao.png",
+            "avaliacao": 5.0
+        }
+        for r in rows
+    ]
+
+    return templates.TemplateResponse(
+        "telaSolicitarTreino.html",
+        {"request": request, "profissionais": profissionais}
+    )
+
+@app.get("/profissionais-nutricao")
+def listar_profissionais_nutricao(request:Request):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, nome, area_profissional
+        FROM users
+        WHERE tipo_usuario = 'profissional' AND area_profissional = 'nutricao'
+    """)
+    rows = cur.fetchall()
+    conn.close()
+
+    profissionais = [
+        {
+            "id": r[0],
+            "nome": r[1],
+            "especialidade": "Nutrição",
+            "foto": "/static/img/profissionalDeNutricaoEsportiva.png",
+            "avaliacao": 5.0
+        }
+        for r in rows
+    ]
+
+    return templates.TemplateResponse(
+        "telaSolicitarRotina.html",
+        {"request": request, "profissionais": profissionais}
+    )
+
 @app.get("/profissional/solicitacoes")
-def listar_solicitacoes(request: Request):
-    #tipo = request.session.get("tipo")
-
-    #if tipo != "profissional":
-
-     #   return  RedirectResponse("/menu", status_code=303)
-
+def listar_solicitacoes(request: Request, profissional_id: int = Depends(verify_token)):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("""
     SELECT s.id, s.aluno_id, s.mensagem, s.data
     FROM solicitacoes s
-    WHERE s.status = 'pendente'
-    """)
+    WHERE s.profissional_id = ? AND s.status = 'pendente'
+    """, (profissional_id, ))
     solicitacoes = [{"id": row[0], "aluno_id": row[1], "mensagem": row[2], "data": row[3]} for row in cur.fetchall()]
     conn.close()
     return templates.TemplateResponse("telaSolicitacoes.html", {"request": request, "solicitacoes": solicitacoes})
 
 @app.post("/enviar-solicitacao")
-def enviar_solicitacao(profissinal_id: int = Form(...)):
-    return RedirectResponse("/treinos", status_code=303)
+def enviar_solicitacao(profissional_id: int = Form(...),
+                       mensagem: str = Form(""),
+                       aluno_id: int = Depends(verify_token)):
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO solicitacoes (profissional_id, aluno_id, mensagem, status, data)
+        VALUES (?, ?, ?, 'pendente', datetime('now'))
+    """, (profissional_id, aluno_id, mensagem))
+    conn.commit()
+    conn.close()
+
+    return RedirectResponse("/menu", status_code=303)
+
+@app.post("/profissional/solicitacoes/{solicitacao_id}/atender")
+def atender_solicitacao(solicitacao_id: int, user: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE solicitacoes
+        SET status = 'aceita'
+        WHERE id = ? AND profissional_id = ?
+    """, (solicitacao_id, user))
+
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/profissional/solicitacoes", status_code=303)
+
+@app.post("/profissional/solicitacoes/{solicitacao_id}/ignorar")
+def ignorar_solicitacao(solicitacao_id: int, user: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE solicitacoes
+        SET status = 'recusada'
+        WHERE id = ? AND profissional_id = ?
+    """, (solicitacao_id, user))
+
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/profissional/solicitacoes", status_code=303)
 
 @app.get("/chatbot")
 def chatbot_page(request: Request):
@@ -422,62 +531,133 @@ def chat(message: str = Form(...), user: str = Depends(verify_token)):
 dias_semana = [
         "SEGUNDA-FEIRA", "TERÇA-FEIRA", "QUARTA-FEIRA", "QUINTA-FEIRA", "SEXTA-FEIRA", "SÁBADO", "DOMINGO"
     ]
-rotinas = [
-    {"id": 1, "nome": "Rotina Cutting", "alimentos": {dia: [] for dia in dias_semana}}
-]
 
 @app.get("/rotina")
-def listar_rotinas(request: Request):
+def listar_rotinas(request: Request, user: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT id, nome FROM rotinas WHERE usuario_email = ?", (user, ))
+    rows = cur.fetchall()
+
+    rotinas = []
+
+    for rotina_id, nome in rows:
+        alimentos_por_dia = {dia: [] for dia in dias_semana}
+
+        cur.execute("SELECT id, dia, alimento FROM rotina_alimentos WHERE rotina_id = ?", (rotina_id,))
+        alimentos_rows = cur.fetchall()
+
+        for alimento_id, dia, alimento_nome in alimentos_rows:
+            alimentos_por_dia[dia].append({
+                "id": alimento_id,
+                "nome": alimento_nome
+            })
+
+        rotinas.append({
+            "id": rotina_id,
+            "nome": nome,
+            "alimentos": alimentos_por_dia,
+        })
+    conn.close()
     return templates.TemplateResponse(
         "telaRotina.html",
         {"request": request, "rotinas": rotinas}
     )
 
 @app.post("/rotinas/adicionar")
-def adicionar_rotina(nome: str = Form( ... )):
-    novo_id = max(r["id"] for r in rotinas) + 1 if rotinas else 1
-    rotinas.append({"id": novo_id, "nome": nome, "alimentos": {dia: [] for dia in dias_semana}})
+def adicionar_rotina(nome: str = Form( ... ), user: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("INSERT INTO rotinas (nome, usuario_email) VALUES (?, ?)", (nome, user))
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/rotina", status_code=303)
+
+@app.post("/rotinas/{rotina_id}/editar")
+def editar_rotina(rotina_id: int, nome: str = Form(...)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE rotinas
+        SET nome = ?
+        WHERE id = ?
+    """, (nome, rotina_id))
+    conn.commit()
+    conn.close()
     return RedirectResponse("/rotina", status_code=303)
 
 @app.post("/rotinas/{rotina_id}/excluir")
 def excluir_rotina(rotina_id: int):
-    global rotinas
-    rotinas = [r for r in rotinas if r["id"] != rotina_id]
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM rotinas WHERE id = ?", (rotina_id,))
+    conn.commit()
+    conn.close()
     return RedirectResponse("/rotina", status_code=303)
 
 @app.post("/rotinas/{rotina_id}/adicionar-alimento/{dia}")
 def adicionar_alimento(rotina_id: int, dia: str, alimento: str = Form(...)):
-    for r in rotinas:
-        if r["id"] == rotina_id:
-            r["alimentos"][dia].append(alimento)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO rotina_alimentos (rotina_id, dia, alimento)
+        VALUES (?, ?, ?)
+    """, (rotina_id, dia, alimento))
+    conn.commit()
+    conn.close()
     return RedirectResponse("/rotina", status_code=303)
 
-@app.post("/rotinas/{rotina_id}/adicionar_alimento/{dia}")
-def adicionar_alimento(rotina_id: int, dia: str, alimento: str = Form(...)):
-    for r in rotinas:
-        if r["id"] == rotina_id:
-            r["alimentos"][dia].append(alimento)
+@app.post("/rotinas/{rotina_id}/editar-alimento/{dia}/{alimento_id}")
+def editar_alimento(rotina_id: int, dia: str, alimento_id: int, alimento: str = Form(...)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE rotina_alimentos
+        SET alimento = ?
+        WHERE id = ? AND rotina_id = ? AND dia = ?
+    """, (alimento, alimento_id, rotina_id, dia))
+    conn.commit()
+    conn.close()
     return RedirectResponse("/rotina", status_code=303)
 
-@app.post("/rotinas/{rotina_id}/editar-alimento/{dia}/{alimento_index}")
-def editar_alimento(rotina_id: int, dia: str, alimento_index: int, alimento: str = Form(...)):
-    for r in rotinas:
-        if r["id"] == rotina_id:
-            r["alimentos"][dia][alimento_index] = alimento
+@app.post("/rotinas/{rotina_id}/excluir-alimento/{dia}/{alimento_id}")
+def excluir_alimento(rotina_id: int, dia: str, alimento_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        DELETE FROM rotina_alimentos
+        WHERE id = ? AND rotina_id = ? AND dia = ?
+    """, (alimento_id, rotina_id, dia))
+    conn.commit()
+    conn.close()
     return RedirectResponse("/rotina", status_code=303)
-
-@app.post("/rotinas/{rotina_id}/excluir-alimento/{dia}/{alimento_index}")
-def excluir_alimento(rotina_id: int, dia: str, alimento_index: int):
-    for r in rotinas:
-        if r["id"] == rotina_id:
-            if 0 <= alimento_index < len(r["alimentos"][dia]):
-                r["alimentos"][dia].pop(alimento_index)
-    return RedirectResponse("/rotina", status_code=303)
-
-registros = []
 
 @app.get("/acompanhamento")
-def listar_registros(request: Request):
+def listar_registros(request: Request, user: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, data, calorias_consumidas, calorias_gastas, peso, agua, treinos
+        FROM acompanhamento
+        WHERE usuario_email = ?
+        ORDER BY id DESC
+    """, (user,))
+    rows = cur.fetchall()
+    conn.close()
+
+    registros = [
+        {
+            "id": r[0],
+            "data": r[1],
+            "calorias_consumidas": r[2],
+            "calorias_gastas": r[3],
+            "peso": r[4],
+            "agua": r[5],
+            "treinos": r[6],
+        }
+        for r in rows
+    ]
+
     return templates.TemplateResponse(
         "telaAcompanhamento.html",
         {"request": request, "registros": registros}
@@ -489,45 +669,63 @@ def adicionar_registro(
         calorias_gastas: int = Form(...),
         peso: float = Form(...),
         agua: int = Form(...),
-        treinos: int = Form(...)
+        treinos: int = Form(...),
+        user: str = Depends(verify_token)
 ):
-    novo_id = max([r["id"] for r in registros], default=0) + 1
-    registros.append({
-        "id": novo_id,
-        "data": datetime.today().strftime("%d/%m/%Y"),
-        "calorias_consumidas": calorias_consumidas,
-        "calorias_gastas": calorias_gastas,
-        "peso": peso,
-        "agua": agua,
-        "treinos": treinos
-    })
-    return RedirectResponse("/acompanhamento", status_code=303)
+   conn = sqlite3.connect(DB_PATH)
+   cur = conn.cursor()
+   cur.execute("""
+        INSERT INTO acompanhamento (usuario_email, data, calorias_consumidas, calorias_gastas, peso, agua, treinos)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+
+   """, (
+       user,
+       datetime.today().strftime("%d/%m/%Y"),
+       calorias_consumidas,
+       calorias_gastas,
+       peso,
+       agua,
+       treinos
+   ))
+
+   conn.commit()
+   conn.close()
+
+   return RedirectResponse("/acompanhamento", status_code=303)
 
 
-@app.post("acompanhamento/{reg_id}/editar")
+@app.post("/acompanhamento/{reg_id}/editar")
 def editar_registro(
         reg_id: int,
         calorias_consumidas: int = Form(...),
         calorias_gastas: int = Form(...),
         peso: float = Form(...),
         agua: int = Form(...),
-        treinos: int = Form(...)
+        treinos: int = Form(...),
+        user: str = Depends(verify_token)
 ):
-    for r in registros:
-        if r["id"] == reg_id:
-            r.update({
-                "calorias_consumidas": calorias_consumidas,
-                "calorias_gastas": calorias_gastas,
-                "peso": peso,
-                "agua": agua,
-                "treinos": treinos
-            })
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE acompanhamento
+        SET calorias_consumidas = ?, calorias_gastas = ?, peso = ?, agua = ?, treinos = ?
+        WHERE id = ? AND usuario_email = ?
+    """, (calorias_consumidas, calorias_gastas, peso, agua, treinos, reg_id, user))
+
+    conn.commit()
+    conn.close()
     return RedirectResponse("/acompanhamento", status_code=303)
 
 @app.post("/acompanhamento/{reg_id}/excluir")
-def excluir_registro(reg_id: int):
-    global registros
-    registros = [r for r in registros if r["id"] != reg_id]
+def excluir_registro(reg_id: int, user: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        DELETE FROM acompanhamento WHERE id = ? AND usuario_email = ?
+    """, (reg_id, user))
+
+    conn.commit()
+    conn.close()
     return RedirectResponse("/acompanhamento", status_code=303)
 
 @app.get("/solicitar-rotina")
