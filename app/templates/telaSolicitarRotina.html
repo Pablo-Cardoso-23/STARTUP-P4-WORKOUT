@@ -50,6 +50,7 @@
                     <p class="text-warning">⭐ {{ prof.avaliacao }}</p>
                     <form action="/enviar-solicitacao-rotina" method="post">
                         <input type="hidden" name="profissional_id" value="{{ prof.id }}">
+                        <textarea name="mensagem" class="form-control mb-2" placeholder="Mensagem (opcional)"></textarea>
                         <button type="submit" class="btn btn-dark w-100">Solicitar Rotina</button>
                     </form>
                 </div>

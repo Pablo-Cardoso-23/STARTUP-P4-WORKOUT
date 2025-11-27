@@ -2,6 +2,7 @@ import sqlite3
 from datetime import date
 import re
 from app.config import DB_PATH
+from collections import defaultdict
 
 INTENTS = [
 
@@ -121,7 +122,25 @@ INTENTS = [
             r"\bmostrar\s+(treino\s+\w+)\b"
         ],
         "answer": None
-    }
+    },
+
+    {
+        "name": "listar_rotinas",
+        "patterns": [
+            r"\b(quais|minhas)\s+rotinas\b",
+            r"\blistar\s+rotinas\b"
+        ],
+        "answer": None
+    },
+
+    {
+        "name": "listar_itens",
+        "patterns": [
+            r"\bitens\s+da\s+(rotina\s+\w+)\b",
+            r"\bmostrar\s+(trotinas\s+\w+)\b"
+        ],
+        "answer": None
+    },
 ]
 
 SENSITIVE_PATTERNS = [
@@ -138,8 +157,13 @@ def process_message(message: str, user_email: str):
                 if intent["name"] == "listar_treinos":
                     return get_treinos(user_email)
                 if intent["name"] == "listar_exercicios":
-                    treino_nome = match.group(1)  # captura o nome do treino
+                    treino_nome = match.group(1)
                     return get_exercicios_do_treino(user_email, treino_nome)
+                if intent["name"] == "listar_rotinas":
+                    return get_rotinas(user_email)
+                if intent["name"] == "listar_itens":
+                    rotina_nome = match.group(1).strip().lower().replace("rotina", "").strip()
+                    return get_itens_da_rotina(user_email, rotina_nome)
                 return intent["answer"]
     return "Não entendi sua pergunta. Pode reformular?"
 
@@ -191,3 +215,65 @@ def get_exercicios_do_treino(user_email: str, treino_nome: str):
     resposta += "</ul>"
     return resposta
 
+def get_rotinas(user_email: str):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, nome
+        FROM rotinas
+        WHERE usuario_email = ?
+    """, (user_email, ))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return "Você ainda não cadastrou rotinas."
+    return "Suas rotinas: " + ", ".join([r[1] for r in rows])
+
+def get_itens_da_rotina(user_email: str, rotina_nome: str):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id
+        FROM rotinas
+        WHERE usuario_email = ? 
+        AND LOWER(nome) = LOWER(?)
+    """, (user_email, rotina_nome))
+
+    rotina = cur.fetchone()
+
+    if not rotina:
+        conn.close()
+        return f"Não encontrei nenhuma rotina chamada '{rotina_nome}'."
+
+    rotina_id = rotina[0]
+
+    cur.execute("""
+        SELECT dia, alimento
+        FROM rotina_alimentos
+        WHERE rotina_id = ?
+    """, (rotina_id,))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return f"A  rotina '{rotina_nome}' não possui itens cadastrados."
+
+    dias = defaultdict(list)
+    for dia, alimento in rows:
+        dias[dia].append(alimento)
+
+    resposta = f"<h4>Itens da rotina <strong>{rotina_nome}</strong>: </h4><ul>"
+
+    for dia in dias:
+        resposta += f"<li><strong>{dia}</strong></li>"
+        for alimento in dias[dia]:
+            resposta += f"<li>{alimento}</li>"
+        resposta += "</ul></li>"
+    resposta += "</ul>"
+
+    return resposta

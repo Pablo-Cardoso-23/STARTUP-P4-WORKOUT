@@ -22,11 +22,11 @@
             <small>Data: {{ s.data }}</small>
           </div>
           <div>
-            <form action="/profissional/solicitacoes/{{ s.id }}/atender" method="post" class="d-inline">
-              <button type="submit" class="btn btn-success btn-sm">Atender</button>
+            <form method="post" action="{% if s.tipo == 'Treino' %}/profissional/solicitacoes/{{ s.id }}/atender{% else %}/profissional/solicitacoes-rotina/{{ s.id }}/atender{% endif %}">
+                <button type="submit" class="btn btn-success btn-sm">Atender</button>
             </form>
-            <form action="/profissional/solicitacoes/{{ s.id }}/ignorar" method="post" class="d-inline">
-              <button type="submit" class="btn btn-danger btn-sm">Ignorar</button>
+            <form method="post" action="{% if s.tipo == 'Treino' %}/profissional/solicitacoes/{{ s.id }}/ignorar{% else %}/profissional/solicitacoes-rotina/{{ s.id }}/ignorar{% endif %}">
+                <button type="submit" class="btn btn-danger btn-sm">Ignorar</button>
             </form>
           </div>
         </li>
@@ -42,5 +42,28 @@
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+       const professorId = "{{ user.id }}"; // ID do professor logado
+      const socket = new WebSocket(`ws://localhost:8000/ws/notificacoes/${professorId}`);
+
+      socket.onopen = () => console.log("✅ WebSocket conectado!");
+      socket.onerror = (e) => console.error("❌ Erro WS:", e);
+
+      socket.onmessage = function(event) {
+        const toast = document.createElement("div");
+        toast.className = "toast align-items-center text-bg-primary border-0 show";
+        toast.role = "alert";
+        toast.innerHTML = `
+          <div class="d-flex">
+            <div class="toast-body">
+              ${event.data}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto"
+                    data-bs-dismiss="toast" aria-label="Close"></button>
+          </div>`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+      };
+  </script>
 </body>
 </html>

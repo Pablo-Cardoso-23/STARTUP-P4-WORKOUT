@@ -1,13 +1,13 @@
 import locale
 import re
+import pytz
 from fastapi.params import Cookie
 from app.config import DB_PATH
-from app.models.chatbot import INTENTS, SENSITIVE_PATTERNS, get_treinos, get_exercicios_do_treino, process_message
+from app.models.chatbot import INTENTS, SENSITIVE_PATTERNS, get_treinos, get_exercicios_do_treino, process_message, get_rotinas, get_itens_da_rotina
 import unicodedata
 import sqlite3
-from fastapi import FastAPI, Request, Form, HTTPException, Depends, Cookie
+from fastapi import FastAPI, Request, Form, HTTPException, Depends, Cookie, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
 import os
 from datetime import datetime
 from starlette.responses import FileResponse, RedirectResponse, JSONResponse
@@ -17,7 +17,9 @@ from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from passlib.hash import pbkdf2_sha256
 from jose import jwt, JWTError
 from dotenv import load_dotenv
-from typing import Optional
+from typing import Optional, Dict, List
+from pathlib import Path
+import asyncio
 
 load_dotenv()
 
@@ -27,8 +29,13 @@ templates = Jinja2Templates(directory="app/templates")
 SECRET_KEY = os.getenv("SECRET_KEY", "senha123")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 SQLITE_DB = os.getenv("SQLITE_DB", "./startup.db")
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+os.makedirs(BASE_DIR / "uploads", exist_ok=True)
+connections: Dict[int, List[WebSocket]]= {}
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+app.mount("/uploads", StaticFiles(directory=BASE_DIR / "uploads"), name="uploads")
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -71,12 +78,26 @@ def criar_tabelas():
     )
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS solicitacoes_rotina (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            profissional_id INTEGER NOT NULL,
+            aluno_id INTEGER NOT NULL,
+            mensagem TEXT,
+            status TEXT NOT NULL,
+            data TEXT NOT NULL,
+            FOREIGN KEY (profissional_id) REFERENCES users(id),
+            FOREIGN KEY (aluno_id) REFERENCES users(id)
+        );
+    """)
+
     conn.commit()
     conn.close()
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS profissionais (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,6 +107,7 @@ def init_db():
             avaliacao REAL
         );
     """)
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS profissionais_nutricao (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,6 +117,7 @@ def init_db():
             avaliacao REAL
         );
     """)
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,17 +130,19 @@ def init_db():
             cref TEXT,
             crm TEXT,
             created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+        );
+    """)
 
-        );
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS TREINOS (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT NOT NULL,
-            usuario_email TEXT NOT NULL,
-            FOREIGN KEY (usuario_email) REFERENCES users(email)
-        );
-    """)
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN foto TEXT;")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN descricao TEXT;")
+    except sqlite3.OperationalError:
+        pass
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS exercicios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -246,7 +271,7 @@ def exibir_menu(request: Request, user: str = Depends(verify_token)):
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("SELECT nome, tipo_usuario FROM users WHERE email = ?", (user,))
+    cur.execute("SELECT id, nome, tipo_usuario FROM users WHERE email = ?", (user,))
     row = cur.fetchone()
     conn.close()
 
@@ -256,14 +281,15 @@ def exibir_menu(request: Request, user: str = Depends(verify_token)):
             detail="USUÁRIO NÃO ENCONTRADO"
         )
 
-    nome_usuario, tipo_usuario = row
+    prof_id, nome_usuario, tipo_usuario = row
 
     return templates.TemplateResponse(
         "menu.html",
         {"request": request,
          "nome_usuario": nome_usuario,
          "dia_atual": dia_atual,
-         "tipo_usuario": tipo_usuario
+         "tipo_usuario": tipo_usuario,
+         "user": {"id":prof_id, "nome": nome_usuario}
          })
 
 @app.get("/treinos")
@@ -391,7 +417,7 @@ def listar_profissionais_ed_fisica(request:Request):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("""
-        SELECT id, nome, area_profissional 
+        SELECT id, nome, area_profissional, foto 
         FROM users
         WHERE tipo_usuario = 'profissional' AND area_profissional = 'educacao_fisica'
     """)
@@ -403,7 +429,7 @@ def listar_profissionais_ed_fisica(request:Request):
             "id": r[0],
             "nome": r[1],
             "especialidade": "Educação Física",
-            "foto": "/static/img/profissionalDeMusculacao.png",
+            "foto": r[3] if r[3] else "/static/img/default.png",
             "avaliacao": 5.0
         }
         for r in rows
@@ -419,7 +445,7 @@ def listar_profissionais_nutricao(request:Request):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("""
-        SELECT id, nome, area_profissional
+        SELECT id, nome, area_profissional, foto
         FROM users
         WHERE tipo_usuario = 'profissional' AND area_profissional = 'nutricao'
     """)
@@ -431,7 +457,7 @@ def listar_profissionais_nutricao(request:Request):
             "id": r[0],
             "nome": r[1],
             "especialidade": "Nutrição",
-            "foto": "/static/img/profissionalDeNutricaoEsportiva.png",
+            "foto": r[3] if r[3] else "/static/img/default.png",
             "avaliacao": 5.0
         }
         for r in rows
@@ -442,58 +468,229 @@ def listar_profissionais_nutricao(request:Request):
         {"request": request, "profissionais": profissionais}
     )
 
+@app.websocket("/ws/notificacoes/{professor_id}")
+async def notificacoes(websocket: WebSocket, professor_id: int):
+    await websocket.accept()
+
+    if professor_id not in connections:
+        connections[professor_id] = []
+
+    connections[professor_id].append(websocket)
+
+    try:
+        while True:
+            await asyncio.sleep(60)
+
+    except WebSocketDisconnect:
+        connections[professor_id].remove(websocket)
+
+async def notificar_professor(professor_id: int, mensagem: str):
+    if professor_id in connections:
+        vivos = []
+        for ws in connections[professor_id]:
+            try:
+                asyncio.create_task(ws.send_text(mensagem))
+                vivos.append(ws)
+
+            except Exception as e:
+                print("Erro ao enviar notificação: ", e)
+        connections[professor_id] = vivos
+
+@app.get("/teste/{prof_id}")
+def teste(prof_id: int):
+    notificar_professor(prof_id, "🔔 Teste de notificação")
+    return {"ok": True}
+
 @app.get("/profissional/solicitacoes")
-def listar_solicitacoes(request: Request, profissional_id: int = Depends(verify_token)):
+def listar_solicitacoes(request: Request, email: str = Depends(verify_token)):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+
     cur.execute("""
-    SELECT s.id, s.aluno_id, s.mensagem, s.data
-    FROM solicitacoes s
-    WHERE s.profissional_id = ? AND s.status = 'pendente'
-    """, (profissional_id, ))
-    solicitacoes = [{"id": row[0], "aluno_id": row[1], "mensagem": row[2], "data": row[3]} for row in cur.fetchall()]
+        SELECT id, nome
+        FROM users
+        WHERE email = ?
+    """, (email, ))
+
+    prof = cur.fetchone()
+
+    if not prof:
+        conn.close()
+        raise HTTPException(status_code=401, detail="Professor não encontrado")
+
+    # prof_id, prof_nome = prof[0], prof[1]
+    prof_id, prof_nome = prof
+
+    cur.execute("""
+        SELECT s.id, u.nome, s.mensagem, s.data
+        FROM solicitacoes s
+        JOIN users u ON u.id = s.aluno_id
+        WHERE s.profissional_id = ? AND s.status = 'pendente'
+    """, (prof_id, ))
+
+    solicitacoes_treino = [
+        {"id": row[0], "aluno": row[1], "mensagem": row[2], "data": row[3], "tipo": "Treino"}
+        for row in cur.fetchall()
+    ]
+
+    cur.execute("""
+            SELECT sr.id, u.nome, sr.mensagem, sr.data
+            FROM solicitacoes_rotina sr
+            JOIN users u ON u.id = sr.aluno_id
+            WHERE sr.profissional_id = ? AND sr.status = 'pendente'
+        """, (prof_id,))
+
+    solicitacoes_rotina = [
+        {"id": row[0], "aluno": row[1], "mensagem": row[2], "data": row[3], "tipo": "Rotina Alimentar"}
+        for row in cur.fetchall()
+    ]
+
     conn.close()
-    return templates.TemplateResponse("telaSolicitacoes.html", {"request": request, "solicitacoes": solicitacoes})
+
+    todas_solicitacoes = solicitacoes_treino + solicitacoes_rotina
+
+    return templates.TemplateResponse("telaSolicitacoes.html", {"request": request, "solicitacoes": todas_solicitacoes,
+                                                                "user": {"id": prof_id, "nome": prof_nome}})
 
 @app.post("/enviar-solicitacao")
-def enviar_solicitacao(profissional_id: int = Form(...),
+async def enviar_solicitacao(profissional_id: int = Form(...),
                        mensagem: str = Form(""),
-                       aluno_id: int = Depends(verify_token)):
+                       email: str = Depends(verify_token)):
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, nome
+        FROM users
+        WHERE email = ?
+    """, (email, ))
+
+    aluno = cur.fetchone()
+
+    if not aluno:
+        conn.close()
+        raise HTTPException(status_code=401, detail="Aluno não encontrado")
+
+    aluno_id, aluno_nome = aluno
+
+    br_tz = pytz.timezone("America/Sao_Paulo")
+    agora = datetime.now(br_tz).strftime("%Y/%m/%d %H:%M:%S")
+
+
     cur.execute("""
         INSERT INTO solicitacoes (profissional_id, aluno_id, mensagem, status, data)
-        VALUES (?, ?, ?, 'pendente', datetime('now'))
+        VALUES (?, ?, ?, 'pendente', datetime('now', '-3 hours'))
     """, (profissional_id, aluno_id, mensagem))
+
     conn.commit()
     conn.close()
+
+    await notificar_professor(profissional_id, f"📩 VOCÊ POSSUI UMA NOVA NOTIFICAÇÃO DO ALUNO {aluno_nome}")
 
     return RedirectResponse("/menu", status_code=303)
 
 @app.post("/profissional/solicitacoes/{solicitacao_id}/atender")
-def atender_solicitacao(solicitacao_id: int, user: str = Depends(verify_token)):
+def atender_solicitacao(solicitacao_id: int, email: str = Depends(verify_token)):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id
+        FROM users
+        WHERE email = ?
+    """, (email, ))
+
+    prof = cur.fetchone()
+
+    if not prof:
+        conn.close()
+        raise HTTPException(status_code=401, detail="Professor não encontrado")
+
+    prof_id = prof[0]
+
     cur.execute("""
         UPDATE solicitacoes
         SET status = 'aceita'
         WHERE id = ? AND profissional_id = ?
-    """, (solicitacao_id, user))
+    """, (solicitacao_id, prof_id))
 
     conn.commit()
     conn.close()
     return RedirectResponse("/profissional/solicitacoes", status_code=303)
 
 @app.post("/profissional/solicitacoes/{solicitacao_id}/ignorar")
-def ignorar_solicitacao(solicitacao_id: int, user: str = Depends(verify_token)):
+def ignorar_solicitacao(solicitacao_id: int, email: str = Depends(verify_token)):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+
+    cur.execute("""
+            SELECT id
+            FROM users
+            WHERE email = ?
+        """, (email,))
+
+    prof = cur.fetchone()
+
+    if not prof:
+        conn.close()
+        raise HTTPException(status_code=401, detail="Professor não encontrado")
+
+    prof_id = prof[0]
+
     cur.execute("""
         UPDATE solicitacoes
         SET status = 'recusada'
         WHERE id = ? AND profissional_id = ?
-    """, (solicitacao_id, user))
+    """, (solicitacao_id, prof_id))
+
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/profissional/solicitacoes", status_code=303)
+
+@app.post("/profissional/solicitacoes-rotina/{solicitacao_id}/atender")
+def atender_solicitacao_rotina(solicitacao_id: int, email: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("SELECT id FROM users WHERE email = ?", (email,))
+    prof = cur.fetchone()
+
+    if not prof:
+        conn.close()
+        raise HTTPException(status_code=401, detail="Profissional não encontrado")
+
+    prof_id = prof[0]
+
+    cur.execute("""
+        UPDATE solicitacoes_rotina
+        SET status = 'aceita'
+        WHERE id = ? AND profissional_id = ?
+    """, (solicitacao_id, prof_id))
+
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/profissional/solicitacoes", status_code=303)
+
+@app.post("/profissional/solicitacoes-rotina/{solicitacao_id}/ignorar")
+def ignorar_solicitacao_rotina(solicitacao_id: int, email: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("SELECT id FROM users WHERE email = ?", (email,))
+    prof = cur.fetchone()
+
+    if not prof:
+        conn.close()
+        raise HTTPException(status_code=401, detail="Profissional não encontrado")
+
+    prof_id = prof[0]
+
+    cur.execute("""
+        UPDATE solicitacoes_rotina
+        SET status = 'recusada'
+        WHERE id = ? AND profissional_id = ?
+    """, (solicitacao_id, prof_id))
 
     conn.commit()
     conn.close()
@@ -744,8 +941,40 @@ def solicitar_rotina_page(request: Request):
     )
 
 @app.post("/enviar-solicitacao-rotina")
-def enviar_solicitacao_rotina(profissional_id: int = Form( ... )):
-    return RedirectResponse(url="/rotina", status_code=303)
+async def enviar_solicitacao_rotina(profissional_id: int = Form( ... ),
+                              mensagem: str = Form(""),
+                              email: str = Depends(verify_token),
+                              ):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, nome
+        FROM users
+        WHERE email = ?
+    """, (email, ))
+
+    aluno = cur.fetchone()
+
+    if not aluno:
+        conn.close()
+        raise HTTPException(status_code=401, detail="Aluno não encontrado")
+
+    aluno_id, aluno_nome = aluno
+
+    cur.execute("""
+        INSERT INTO solicitacoes_rotina (profissional_id, aluno_id, mensagem, status, data)
+        VALUES (?, ?, ?, 'pendente', datetime('now', '-3 hours'))
+    """, (profissional_id, aluno_id, mensagem))
+
+    conn.commit()
+    conn.close()
+
+    await notificar_professor(profissional_id,
+                              f"O aluno {aluno_nome} enviou uma nova solicitação de rotina alimentar!"
+    )
+
+    return RedirectResponse(url="/menu", status_code=303)
 
 @app.get("/login")
 def login_page(request: Request):
@@ -818,3 +1047,99 @@ def register(nome: str = Form(...),
     conn.close()
     # return {"success": True, "redirect": "/login"}
     return RedirectResponse(url="/login", status_code=303)
+
+@app.get("/perfil")
+def perfil(request: Request, email: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT nome, email, foto, descricao
+        FROM users
+        WHERE email = ?
+    """, (email,))
+
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+       raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    user = {
+        "nome": row[0],
+        "email": row[1],
+        "foto": row[2] if row[2] else "/static/img/default.png",
+        "descricao": row[3] if row[3] else "Nenhuma descrição adicionada.",
+    }
+
+    return templates.TemplateResponse("perfil.html", {"request": request, "user": user})
+
+@app.get("/perfil/editar")
+def editar_perfil(request: Request, email: str = Depends(verify_token)):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT nome, email, foto, descricao
+        FROM users
+        WHERE email = ?
+    """, (email,))
+
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    user = {
+        "nome": row[0],
+        "email": row[1],
+        "foto": row[2] if row[2] else "/static/img/default.png",
+        "descricao": row[3] if row[3] else "",
+    }
+
+    return templates.TemplateResponse("editarPerfil.html", {"request": request, "user": user})
+
+@app.post("/perfil/editar")
+def salvar_perfil(
+        foto: UploadFile = File(None),
+        foto_url: str = Form(None),
+        descricao: str = Form(...),
+        email: str = Depends(verify_token)
+):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    foto_path = None
+
+    if foto and foto.filename:
+        if foto and not foto.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Arquivo inválido. Envie apenas imagens.")
+
+        upload_dir = "uploads"
+        os.makedirs(upload_dir, exist_ok=True)
+        foto_path = os.path.join(upload_dir, foto.filename)
+
+        with open(foto_path, "wb") as buffer:
+            buffer.write(foto.file.read())
+
+        foto_path = "/uploads/" + foto.filename
+
+    elif foto_url and foto_url.strip():
+        foto_path = foto_url.strip()
+
+    else:
+        cur.execute("SELECT foto FROM users WHERE email = ?", (email,))
+        current = cur.fetchone()
+        foto_path = current[0] if current and current and current[0] else None
+
+    cur.execute("""
+        UPDATE users
+        SET foto = ?, descricao = ?
+        WHERE email = ?
+    """, (foto_path, descricao, email))
+
+    conn.commit()
+    conn.close()
+
+    return RedirectResponse(url="/perfil", status_code=303)

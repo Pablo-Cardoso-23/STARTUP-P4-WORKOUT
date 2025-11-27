@@ -51,6 +51,8 @@
 </head>
 <body class="d-flex flex-column min-vh-100">
 
+     <div id="toast-container" class="toast-container position-fixed top-0 start-0 p-3"></div>
+
     <header class="position-relative text-center py-3">
         <div class="position-absolute top-0 end-0 p-3">
             <form action="/logout" method="POST">
@@ -95,9 +97,31 @@
             {% if tipo_usuario == "profissional" %}
                 <a class="nav-link text-black" href="/profissional/solicitacoes">Solicitações</a>
             {% endif %}
+            <a class="nav-link text-black" href="/perfil">Meu Perfil</a>
         </div>
     </nav>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      const professorId = "{{ user.id }}"; // ID do professor logado
+      const socket = new WebSocket(`ws://localhost:8000/ws/notificacoes/${professorId}`);
+
+      socket.onopen = () => console.log("✅ WebSocket conectado no menu!");
+      socket.onmessage = function(event) {
+        const toast = document.createElement("div");
+        toast.className = "toast align-items-center text-bg-primary border-0 show";
+        toast.role = "alert";
+        toast.innerHTML = `
+          <div class="d-flex">
+            <div class="toast-body">
+              ${event.data}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto"
+                    data-bs-dismiss="toast" aria-label="Close"></button>
+          </div>`;
+        document.getElementById("toast-container").appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+      };
+    </script>
 </body>
 </html>
